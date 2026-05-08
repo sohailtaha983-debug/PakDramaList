@@ -7,6 +7,23 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.development.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.development.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <!-- Firebase compat CDN (works without ES modules) -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyB3auFGDHgnE9b2_Xjuvqv6pKVarsIiodE",
+      authDomain: "pakdramalist.firebaseapp.com",
+      databaseURL: "https://pakdramalist-default-rtdb.firebaseio.com",
+      projectId: "pakdramalist",
+      storageBucket: "pakdramalist.firebasestorage.app",
+      messagingSenderId: "1084312706336",
+      appId: "1:1084312706336:web:adc5fc3ed3543432608b45",
+      measurementId: "G-6C5X2NR48R"
+    };
+    firebase.initializeApp(firebaseConfig);
+    window.__fbdb = firebase.database();
+  </script>
 </head>
 <body>
   <div id="root"></div>
@@ -218,15 +235,21 @@ const GlobalStyle = () => (
   `}</style>
 );
 
-// ─── DATA STORE (localStorage) ────────────────────────────────────────────────
-const DB_KEY = "pkdramalist_db";
-const getDB = () => {
-  try {
-    const stored = JSON.parse(localStorage.getItem(DB_KEY));
-    return stored ? migrateDB(stored) : initDB();
-  } catch { return initDB(); }
+// ─── DATA STORE (Firebase Realtime Database) ──────────────────────────────────
+let __dbCache = null;
+
+const getDB = () => __dbCache || initDB();
+
+const saveDB = (db) => {
+  __dbCache = db;
+  if (!window.__fbdb) return;
+  window.__fbdb.ref("/").set(db).catch(e => console.error("Firebase write error:", e));
 };
-const saveDB = (db) => localStorage.setItem(DB_KEY, JSON.stringify(db));
+
+const patchDB = (path, value) => {
+  if (!window.__fbdb) return;
+  window.__fbdb.ref(path).set(value).catch(e => console.error("Firebase patch error:", e));
+};
 
 const findPersonByName = (people, name) => (people || []).find(p => p.name.toLowerCase() === String(name || "").toLowerCase());
 const personName = (idOrName, db = getDB()) => {
@@ -236,8 +259,7 @@ const personName = (idOrName, db = getDB()) => {
 const personPhoto = (person) => person?.photo || `https://placehold.co/120x120/1a2a1a/72b884?text=${encodeURIComponent((person?.name || "?")[0])}`;
 
 const migrateDB = (db) => {
-  let changed = false;
-  if (!db.people) { db.people = samplePeople; changed = true; }
+  if (!db.people) { db.people = samplePeople; }
   db.people = db.people.map(p => ({ knownFor: [], ...p, roles: p.roles || [p.primaryRole || "Actor"] }));
   db.dramas = (db.dramas || []).map(d => {
     const castNames = Array.isArray(d.cast) ? d.cast : String(d.cast || "").split(",").map(x => x.trim()).filter(Boolean);
@@ -246,10 +268,8 @@ const migrateDB = (db) => {
     const writerNames = Array.isArray(d.writers) ? d.writers : String(d.writer || "").split(",").map(x => x.trim()).filter(Boolean);
     const directorIds = d.directorIds || directorNames.map(n => findPersonByName(db.people, n)?.id).filter(Boolean);
     const writerIds = d.writerIds || writerNames.map(n => findPersonByName(db.people, n)?.id).filter(Boolean);
-    if (!d.castIds || !d.directorIds || !d.writerIds) changed = true;
     return { ...d, cast: castNames, castIds, directorIds, writerIds };
   });
-  if (changed) saveDB(db);
   return db;
 };
 
@@ -2474,20 +2494,53 @@ function App() {
   const [page, setPage] = useState("home");
   const [user, setUser] = useState(null);
   const [authMode, setAuthMode] = useState(null);
-
   const [route, setRoute] = useState({ type: null, item: null });
+  const [dbReady, setDbReady] = useState(false);
+  const [dbError, setDbError] = useState(null);
 
   useEffect(() => {
-    getDB(); // ensure DB initialized
-    const saved = localStorage.getItem("pakdramalist_session");
-    if (saved) {
-      const db = getDB();
-      const u = db.users.find(u => u.id === saved);
-      if (u) setUser(u);
-    }
     const syncRoute = () => setRoute(getRouteFromHash());
     syncRoute();
     window.addEventListener("hashchange", syncRoute);
+
+    // Show site immediately with sample data, then sync from Firebase
+    if (!__dbCache) {
+      __dbCache = initDB();
+    }
+    setDbReady(true);
+
+    // Then connect Firebase in background
+    if (window.__fbdb) {
+      window.__fbdb.ref("/").on("value", (snapshot) => {
+        const data = snapshot.val();
+        if (!data) {
+          // First run — seed Firebase with sample data
+          window.__fbdb.ref("/").set(__dbCache).catch(e => console.error("Seed error:", e));
+        } else {
+          __dbCache = migrateDB(data);
+          // Re-check session after data loads
+          const savedId = localStorage.getItem("pakdramalist_session");
+          if (savedId) {
+            const u = (__dbCache.users || []).find(u => u.id === savedId);
+            if (u) setUser(u);
+          }
+          setDbReady(prev => { if (!prev) return true; return prev; });
+        }
+      }, (error) => {
+        console.error("Firebase error:", error);
+        setDbError("Firebase connection failed. Check your database Rules are set to public.");
+      });
+    } else {
+      setDbError("Firebase not loaded — running with sample data only.");
+    }
+
+    // Restore session from localStorage
+    const savedId = localStorage.getItem("pakdramalist_session");
+    if (savedId && __dbCache) {
+      const u = (__dbCache.users || []).find(u => u.id === savedId);
+      if (u) setUser(u);
+    }
+
     return () => window.removeEventListener("hashchange", syncRoute);
   }, []);
 
@@ -2505,7 +2558,6 @@ function App() {
   };
 
   const updateUser = (u) => setUser({ ...u });
-
   const openAuth = (mode) => setAuthMode(mode);
   const navigatePage = (nextPage) => {
     if (window.location.hash) window.location.hash = "";
@@ -2514,12 +2566,32 @@ function App() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
+  // Loading screen while Firebase connects
+  if (!dbReady) {
+    return (
+      <>
+        <GlobalStyle />
+        <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 16, background: COLORS.bg }}>
+          <div style={{ fontFamily: "Cinzel", fontSize: 28, color: COLORS.green3 }}>PakDramaList</div>
+          <div style={{ width: 48, height: 48, border: `4px solid ${COLORS.border}`, borderTopColor: COLORS.green3, borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+          <div style={{ color: COLORS.textMuted, fontSize: 13 }}>Connecting to database…</div>
+          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+        </div>
+      </>
+    );
+  }
+
   const db = getDB();
   const settings = db.settings || {};
 
   return (
     <AuthCtx.Provider value={{ user, login, logout, updateUser }}>
       <GlobalStyle />
+      {dbError && (
+        <div style={{ background: COLORS.dangerBg, borderBottom: `1px solid ${COLORS.danger}`, padding: "8px 16px", fontSize: 13, color: "#f88", textAlign: "center" }}>
+          ⚠️ {dbError}
+        </div>
+      )}
       {settings.maintenanceMode && user?.role !== "admin" ? (
         <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 16 }}>
           <div style={{ fontSize: 60 }}>🔧</div>
@@ -2552,7 +2624,6 @@ function App() {
           </main>
           <footer style={{ background: COLORS.bgCard, borderTop: `1px solid ${COLORS.border}`, padding: "28px 20px", marginTop: 40, textAlign: "center" }}>
             <div style={{ fontFamily: "Cinzel", fontSize: 18, color: COLORS.green3, marginBottom: 4 }}>{settings.siteName || "PakDramaList"}</div>
-            
             <div style={{ color: COLORS.textMuted, fontSize: 12 }}>© 2026 PakDramaList. Pakistani dramas, movies & stars.</div>
           </footer>
           {authMode && <AuthModal onClose={() => setAuthMode(null)} onSuccess={login} />}
