@@ -65,260 +65,156 @@ const GlobalStyle = () => (
     .tip { display: none; position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%); background: ${COLORS.bgCard}; border: 1px solid ${COLORS.border}; color: ${COLORS.textSecondary}; font-size: 12px; padding: 4px 10px; border-radius: 6px; white-space: nowrap; z-index: 100; }
 
     /* MOBILE RESPONSIVE FIX */
-
     html, body { width: 100%; overflow-x: hidden; }
     img { max-width: 100%; }
+
+    /* Hamburger button - hidden on desktop */
+    .nav-hamburger { display: none; background: none; border: none; color: ${COLORS.green3}; font-size: 24px; cursor: pointer; padding: 4px 8px; line-height: 1; }
+    /* Mobile nav overlay */
+    .nav-mobile-menu { display: none; }
+
     @media (max-width: 768px) {
-      body { overflow-x: hidden; }
-      nav { position: sticky !important; top: 0; }
-      nav > div {
-        height: auto !important;
-        min-height: 60px !important;
-        padding: 8px 12px !important;
-        gap: 8px !important;
-        flex-wrap: wrap !important;
-        align-items: center !important;
+      body { overflow-x: hidden; font-size: 14px; }
+
+      /* ── NAVBAR ── */
+      .nav-hamburger { display: block !important; }
+      .nav-desktop-links { display: none !important; }
+      .nav-desktop-spacer { display: none !important; }
+      .nav-desktop-search { display: none !important; }
+      .nav-desktop-auth { display: none !important; }
+
+      .nav-mobile-menu {
+        display: block;
+        background: ${COLORS.bgCard};
+        border-top: 1px solid ${COLORS.border};
+        padding: 12px 16px 16px;
       }
-      nav > div > div:first-child {
-        width: 100% !important;
-        align-items: center !important;
-        text-align: center !important;
-        margin-bottom: 4px !important;
+      .nav-mobile-menu input {
+        width: 100%;
+        background: ${COLORS.bgInput};
+        border: 1px solid ${COLORS.border};
+        border-radius: 20px;
+        color: ${COLORS.textPrimary};
+        padding: 8px 14px;
+        font-size: 13px;
+        margin-bottom: 10px;
+        font-family: inherit;
+        box-sizing: border-box;
       }
-      nav > div > div:first-child span:first-child {
-        font-size: 18px !important;
+      .nav-mobile-links {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-bottom: 10px;
       }
-      nav > div > div:nth-child(2) {
-        order: 3 !important;
-        width: 100% !important;
-        overflow-x: auto !important;
-        white-space: nowrap !important;
-        display: flex !important;
-        justify-content: flex-start !important;
-        padding-bottom: 4px !important;
-        margin-left: 0 !important;
+      .nav-mobile-links button {
+        background: ${COLORS.bgPanel};
+        border: 1px solid ${COLORS.border};
+        color: ${COLORS.textSecondary};
+        border-radius: 20px;
+        padding: 6px 12px;
+        font-size: 12px;
+        font-family: inherit;
+        cursor: pointer;
+        font-weight: 600;
       }
-      nav > div > div:nth-child(2) button {
-        flex: 0 0 auto !important;
-        font-size: 12px !important;
-        padding: 6px 10px !important;
+      .nav-mobile-links button.active {
+        background: ${COLORS.green1};
+        color: #fff;
+        border-color: ${COLORS.green1};
       }
-      nav input[placeholder*="Search"] {
-        width: 135px !important;
-        font-size: 12px !important;
-        padding: 6px 10px !important;
+      .nav-mobile-auth {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        align-items: center;
       }
-      nav > div > div[style*="flex: 1"] {
-        display: none !important;
-      }
+
+      /* ── MODAL ── */
+      .modal-overlay { padding: 10px; align-items: flex-end; }
       .modal-box {
-        width: 96vw !important;
-        max-width: 96vw !important;
+        width: 100% !important;
+        max-width: 100% !important;
         padding: 16px !important;
+        border-radius: 16px 16px 0 0 !important;
+        max-height: 92vh !important;
       }
-    }
 
-    @media (max-width: 600px) {
-      body { font-size: 14px; }
-      h1 { font-size: 26px !important; }
-      h2 { font-size: 18px !important; }
-
-      /* Hero section */
-      div[style*="height: 420px"] {
+      /* ── HERO SECTION ── */
+      .hero-section {
         height: auto !important;
         min-height: 0 !important;
-        padding: 22px 0 !important;
-        margin-bottom: 24px !important;
+        padding-bottom: 0 !important;
+        margin-bottom: 20px !important;
       }
-      div[style*="height: 420px"] > img {
-        position: absolute !important;
-      }
-      div[style*="height: 420px"] > div[style*="display: flex"] {
-        position: relative !important;
+      .hero-inner {
         padding: 20px 16px !important;
-      }
-      div[style*="height: 420px"] div[style*="maxWidth: 1200"] {
         flex-direction: column !important;
         align-items: center !important;
-        gap: 16px !important;
         text-align: center !important;
+        gap: 16px !important;
       }
-      div[style*="height: 420px"] img[alt] {
-        width: 145px !important;
-        height: 210px !important;
+      .hero-poster {
+        width: 130px !important;
+        height: 190px !important;
       }
-      div[style*="height: 420px"] p {
-        max-width: 100% !important;
-        font-size: 13px !important;
+      .hero-title { font-size: 24px !important; }
+      .hero-synopsis { font-size: 13px !important; max-width: 100% !important; }
+
+      /* ── DETAIL PAGE HERO ── */
+      .detail-hero-inner {
+        flex-direction: column !important;
+        align-items: center !important;
+        text-align: center !important;
+        padding: 20px 14px !important;
+        gap: 16px !important;
       }
-      div[style*="height: 420px"] h1 {
-        font-size: 28px !important;
-        line-height: 1.15 !important;
+      .detail-hero-inner h1 { font-size: 26px !important; }
+      .detail-hero-poster {
+        width: 140px !important;
+        height: 200px !important;
       }
 
-      /* Main containers */
-      div[style*="maxWidth: 1200"], div[style*="maxWidth: 1150"], div[style*="maxWidth: 1100"] {
-        max-width: 100% !important;
+      /* ── DETAIL PAGE GRID ── */
+      .detail-grid {
+        display: block !important;
         padding-left: 14px !important;
         padding-right: 14px !important;
       }
+      .detail-grid aside { margin-top: 20px !important; }
 
-      /* Stats grid */
-      div[style*="gridTemplateColumns: \"repeat(4, 1fr)\""] {
-        grid-template-columns: 1fr 1fr !important;
-        gap: 10px !important;
-      }
-
-      /* Drama/movie page grid */
-      div[style*="gridTemplateColumns: \"minmax(0, 2fr) 330px\""] {
-        display: block !important;
-      }
-      aside {
-        margin-top: 18px !important;
-      }
-
-      /* Detail page hero */
-      div[style*="minHeight: 360"] div[style*="display: flex"] {
-        flex-direction: column !important;
-        text-align: center !important;
-        padding: 24px 14px !important;
-      }
-      div[style*="minHeight: 360"] img[alt] {
-        width: 150px !important;
-        height: 220px !important;
-      }
-      div[style*="minHeight: 360"] h1 {
-        font-size: 30px !important;
-      }
-
-      /* Cards and horizontal rows */
-      .fade-in {
-        max-width: 100vw !important;
-        overflow-x: hidden !important;
-      }
-      div[style*="overflowX: auto"] {
-        -webkit-overflow-scrolling: touch !important;
-      }
-    }
-
-
-
-    /* STRONG MOBILE DETAIL PAGE FIX */
-    @media (max-width: 700px) {
-      * {
-        max-width: 100vw;
-      }
-
-      body, #root {
-        width: 100vw !important;
-        max-width: 100vw !important;
-        overflow-x: hidden !important;
-      }
-
-      /* Force all big desktop flex rows to stack on mobile */
-      div[style*="display: flex"][style*="gap: 28"],
-      div[style*="display: flex"][style*="gap: 32"],
-      div[style*="display: flex"][style*="gap: 24"],
-      div[style*="display: flex"][style*="gap: 22"],
-      div[style*="display: flex"][style*="alignItems: center"],
-      div[style*="display: flex"][style*="align-items: center"] {
-        flex-direction: column !important;
-        align-items: center !important;
-        text-align: center !important;
-        width: 100% !important;
-      }
-
-      /* Drama/movie detail hero content */
-      div[style*="minHeight: 360"],
-      div[style*="minHeight: 340"] {
-        min-height: auto !important;
-        height: auto !important;
-        overflow: hidden !important;
-      }
-
-      div[style*="minHeight: 360"] > div,
-      div[style*="minHeight: 340"] > div {
-        width: 100% !important;
+      /* ── CONTAINERS ── */
+      .page-container {
+        padding-left: 14px !important;
+        padding-right: 14px !important;
         max-width: 100% !important;
       }
 
-      div[style*="minHeight: 360"] div[style*="maxWidth: 1150"],
-      div[style*="minHeight: 340"] div[style*="maxWidth: 1150"] {
-        display: flex !important;
+      /* ── DRAMA MODAL ── */
+      .drama-modal-header {
         flex-direction: column !important;
         align-items: center !important;
         text-align: center !important;
-        padding: 22px 14px !important;
-        gap: 16px !important;
-        width: 100% !important;
+        gap: 12px !important;
       }
-
-      div[style*="minHeight: 360"] img,
-      div[style*="minHeight: 340"] img {
-        width: 150px !important;
-        height: 220px !important;
-        object-fit: cover !important;
+      .drama-modal-poster {
+        width: 110px !important;
+        height: 158px !important;
         flex-shrink: 0 !important;
       }
 
-      div[style*="minHeight: 360"] h1,
-      div[style*="minHeight: 340"] h1 {
-        font-size: 28px !important;
-        line-height: 1.15 !important;
-        white-space: normal !important;
-        word-break: break-word !important;
-        text-align: center !important;
-      }
-
-      div[style*="minHeight: 360"] p,
-      div[style*="minHeight: 340"] p {
-        max-width: 100% !important;
-        width: 100% !important;
-        font-size: 14px !important;
-        line-height: 1.6 !important;
-        text-align: center !important;
-      }
-
-      div[style*="display: flex"][style*="flexWrap: wrap"],
-      div[style*="display: flex"][style*="flex-wrap: wrap"] {
-        justify-content: center !important;
-      }
-
-      select {
-        max-width: 92vw !important;
-      }
-
-      /* Main detail body should become one column */
-      div[style*="gridTemplateColumns: \"minmax(0, 2fr) 330px\""],
-      div[style*="grid-template-columns: minmax(0, 2fr) 330px"] {
-        display: block !important;
-        width: 100% !important;
-        padding-left: 14px !important;
-        padding-right: 14px !important;
-      }
-
-      aside {
-        width: 100% !important;
-        max-width: 100% !important;
-      }
-
-      /* Prevent horizontal card rows from forcing page width */
-      div[style*="overflowX: auto"] {
-        max-width: 100% !important;
-        overflow-x: auto !important;
-      }
-
-      /* Navbar should not create horizontal overflow */
-      nav {
-        max-width: 100vw !important;
-        overflow-x: hidden !important;
-      }
-
-      nav > div {
-        max-width: 100vw !important;
+      /* ── HORIZONTAL SCROLL ROWS ── */
+      .h-scroll-row {
+        -webkit-overflow-scrolling: touch !important;
+        scroll-snap-type: x mandatory !important;
+        padding-bottom: 12px !important;
       }
     }
 
+    @media (max-width: 480px) {
+      h1 { font-size: 22px !important; }
+      h2 { font-size: 17px !important; }
+    }
   `}</style>
 );
 
@@ -642,8 +538,8 @@ const MoviePage = ({ movie, setPage }) => {
       <div style={{ position: "relative", minHeight: 340, overflow: "hidden", borderBottom: `1px solid ${COLORS.border}`, marginBottom: 28 }}>
         <img src={movie.poster} alt={movie.title} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", filter: "blur(6px) brightness(0.28)", transform: "scale(1.05)" }} />
         <div style={{ position: "absolute", inset: 0, background: `linear-gradient(90deg, ${COLORS.bg} 0%, rgba(15,26,15,0.75) 55%, rgba(15,26,15,0.35) 100%)` }} />
-        <div style={{ position: "relative", maxWidth: 1150, margin: "0 auto", padding: "34px 20px", display: "flex", gap: 28, alignItems: "center" }}>
-          <img src={movie.poster} alt={movie.title} style={{ width: 190, height: 270, objectFit: "cover", borderRadius: 12, boxShadow: "0 12px 45px rgba(0,0,0,0.65)", border: `2px solid ${COLORS.gold}` }} />
+        <div className="detail-hero-inner" style={{ position: "relative", maxWidth: 1150, margin: "0 auto", padding: "34px 20px", display: "flex", gap: 28, alignItems: "center" }}>
+          <img src={movie.poster} alt={movie.title} className="detail-hero-poster" style={{ width: 190, height: 270, objectFit: "cover", borderRadius: 12, boxShadow: "0 12px 45px rgba(0,0,0,0.65)", border: `2px solid ${COLORS.gold}`, flexShrink: 0 }} />
           <div style={{ flex: 1 }}>
             <button onClick={() => setPage("movies")} style={{ background: "transparent", border: "none", color: COLORS.green3, fontSize: 13, marginBottom: 14, cursor: "pointer" }}>← Back to Movies</button>
             <h1 style={{ fontFamily: "Cinzel", fontSize: 38, color: "#fff", marginBottom: 4 }}>{movie.title}</h1>
@@ -658,7 +554,7 @@ const MoviePage = ({ movie, setPage }) => {
           </div>
         </div>
       </div>
-      <div style={{ maxWidth: 1150, margin: "0 auto", padding: "0 20px 40px", display: "grid", gridTemplateColumns: "minmax(0, 2fr) 330px", gap: 24 }}>
+      <div className="detail-grid" style={{ maxWidth: 1150, margin: "0 auto", padding: "0 20px 40px", display: "grid", gridTemplateColumns: "minmax(0, 2fr) 330px", gap: 24 }}>
         <div>
           <Card style={{ padding: 20, marginBottom: 20 }}>
             <h2 style={{ fontFamily: "Cinzel", fontSize: 20, color: COLORS.green3, marginBottom: 12 }}>Details</h2>
@@ -789,8 +685,8 @@ const DramaModal = ({ drama, onClose }) => {
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-box fade-in" style={{ maxWidth: 760 }} onClick={e => e.stopPropagation()}>
-        <div style={{ display: "flex", gap: 20, marginBottom: 20 }}>
-          <img src={drama.poster} alt={drama.title} style={{ width: 140, height: 200, objectFit: "cover", borderRadius: 8, flexShrink: 0 }} />
+        <div className="drama-modal-header" style={{ display: "flex", gap: 20, marginBottom: 20 }}>
+          <img src={drama.poster} alt={drama.title} className="drama-modal-poster" style={{ width: 140, height: 200, objectFit: "cover", borderRadius: 8, flexShrink: 0 }} />
           <div style={{ flex: 1 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
               <div>
@@ -988,8 +884,8 @@ const DramaPage = ({ drama, setPage }) => {
       <div style={{ position: "relative", minHeight: 360, overflow: "hidden", borderBottom: `1px solid ${COLORS.border}`, marginBottom: 28 }}>
         <img src={drama.poster} alt={drama.title} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", filter: "blur(6px) brightness(0.28)", transform: "scale(1.05)" }} />
         <div style={{ position: "absolute", inset: 0, background: `linear-gradient(90deg, ${COLORS.bg} 0%, rgba(15,26,15,0.75) 55%, rgba(15,26,15,0.35) 100%)` }} />
-        <div style={{ position: "relative", maxWidth: 1150, margin: "0 auto", padding: "34px 20px", display: "flex", gap: 28, alignItems: "center" }}>
-          <img src={drama.poster} alt={drama.title} style={{ width: 190, height: 270, objectFit: "cover", borderRadius: 12, boxShadow: "0 12px 45px rgba(0,0,0,0.65)", border: `2px solid ${COLORS.green1}` }} />
+        <div className="detail-hero-inner" style={{ position: "relative", maxWidth: 1150, margin: "0 auto", padding: "34px 20px", display: "flex", gap: 28, alignItems: "center" }}>
+          <img src={drama.poster} alt={drama.title} className="detail-hero-poster" style={{ width: 190, height: 270, objectFit: "cover", borderRadius: 12, boxShadow: "0 12px 45px rgba(0,0,0,0.65)", border: `2px solid ${COLORS.green1}`, flexShrink: 0 }} />
           <div style={{ flex: 1 }}>
             <button onClick={() => setPage("dramas")} style={{ background: "transparent", border: "none", color: COLORS.green3, fontSize: 13, marginBottom: 14, cursor: "pointer" }}>← Back to Dramas</button>
             <h1 style={{ fontFamily: "Cinzel", fontSize: 38, color: "#fff", marginBottom: 4 }}>{drama.title}</h1>
@@ -1012,7 +908,7 @@ const DramaPage = ({ drama, setPage }) => {
         </div>
       </div>
 
-      <div style={{ maxWidth: 1150, margin: "0 auto", padding: "0 20px 40px", display: "grid", gridTemplateColumns: "minmax(0, 2fr) 330px", gap: 24 }}>
+      <div className="detail-grid" style={{ maxWidth: 1150, margin: "0 auto", padding: "0 20px 40px", display: "grid", gridTemplateColumns: "minmax(0, 2fr) 330px", gap: 24 }}>
         <div>
           <Card style={{ padding: 20, marginBottom: 20 }}>
             <h2 style={{ fontFamily: "Cinzel", fontSize: 20, color: COLORS.green3, marginBottom: 12 }}>Details</h2>
@@ -1316,6 +1212,7 @@ const AuthModal = ({ onClose, onSuccess }) => {
 const Navbar = ({ page, setPage, openAuth }) => {
   const { user, logout } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [results, setResults] = useState([]);
   const [selectedDrama, setSelectedDrama] = useState(null);
@@ -1336,21 +1233,33 @@ const Navbar = ({ page, setPage, openAuth }) => {
     { key: "community", label: "Community" },
   ];
 
+  const handleMobileNav = (key) => {
+    setPage(key);
+    setMobileOpen(false);
+  };
+
   return (
     <>
       <nav style={{ background: COLORS.bgCard, borderBottom: `2px solid ${COLORS.green1}`, position: "sticky", top: 0, zIndex: 500 }}>
-        <div style={{ maxWidth: 1200, margin: "0 auto", padding: "0 20px", display: "flex", alignItems: "center", gap: 16, height: 58 }}>
-          <div onClick={() => setPage("home")} style={{ cursor: "pointer", display: "flex", flexDirection: "column", lineHeight: 1 }}>
+        {/* Main bar */}
+        <div style={{ maxWidth: 1200, margin: "0 auto", padding: "0 16px", display: "flex", alignItems: "center", gap: 16, height: 58 }}>
+          {/* Logo */}
+          <div onClick={() => setPage("home")} style={{ cursor: "pointer", display: "flex", flexDirection: "column", lineHeight: 1, flexShrink: 0 }}>
             <span style={{ fontFamily: "Cinzel", fontSize: 20, fontWeight: 700, color: COLORS.green3, whiteSpace: "nowrap" }}>PakDramaList</span>
-            
           </div>
-          <div style={{ display: "flex", gap: 2, marginLeft: 12 }}>
+
+          {/* Desktop nav links */}
+          <div className="nav-desktop-links" style={{ display: "flex", gap: 2, marginLeft: 12 }}>
             {navLinks.map(l => (
               <button key={l.key} onClick={() => setPage(l.key)} style={{ background: "none", border: "none", color: page === l.key ? COLORS.green3 : COLORS.textSecondary, padding: "6px 10px", fontSize: 13, fontWeight: 600, cursor: "pointer", borderBottom: page === l.key ? `2px solid ${COLORS.green3}` : "2px solid transparent", transition: "color 0.2s" }}>{l.label}</button>
             ))}
           </div>
-          <div style={{ flex: 1 }} />
-          <div style={{ position: "relative" }}>
+
+          {/* Spacer */}
+          <div className="nav-desktop-spacer" style={{ flex: 1 }} />
+
+          {/* Desktop search */}
+          <div className="nav-desktop-search" style={{ position: "relative" }}>
             <input value={search} onChange={e => doSearch(e.target.value)} placeholder="🔍 Search dramas..." style={{ background: COLORS.bgInput, border: `1px solid ${COLORS.border}`, borderRadius: 20, color: COLORS.textPrimary, padding: "6px 14px", fontSize: 13, width: 200 }} />
             {results.length > 0 && (
               <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: COLORS.bgPanel, border: `1px solid ${COLORS.border}`, borderRadius: 8, overflow: "hidden", zIndex: 999, marginTop: 4 }}>
@@ -1368,31 +1277,86 @@ const Navbar = ({ page, setPage, openAuth }) => {
               </div>
             )}
           </div>
-          {user ? (
-            <div style={{ position: "relative" }}>
-              <div onClick={() => setMenuOpen(!menuOpen)} style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", background: COLORS.bgPanel, border: `1px solid ${COLORS.border}`, borderRadius: 20, padding: "4px 12px" }}>
-                <div style={{ width: 28, height: 28, borderRadius: "50%", background: COLORS.green1, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700 }}>{user.avatar}</div>
-                <span style={{ fontSize: 13, color: COLORS.textPrimary }}>{user.username}</span>
-                {user.role !== "member" && <span className="badge" style={{ background: COLORS.gold, color: "#111", fontSize: 10 }}>{user.role}</span>}
-                <span style={{ color: COLORS.textMuted, fontSize: 10 }}>▼</span>
-              </div>
-              {menuOpen && (
-                <div style={{ position: "absolute", top: "110%", right: 0, background: COLORS.bgPanel, border: `1px solid ${COLORS.border}`, borderRadius: 8, overflow: "hidden", minWidth: 160, zIndex: 999 }}>
-                  {[{ label: "My Profile", action: () => { setPage("profile"); setMenuOpen(false); } }, { label: "My Watchlist", action: () => { setPage("watchlist"); setMenuOpen(false); } }, ...(["admin", "moderator", "editor"].includes(user.role) ? [{ label: "⚙️ Admin Panel", action: () => { setPage("admin"); setMenuOpen(false); } }] : []), { label: "Sign Out", action: () => { logout(); setMenuOpen(false); } }].map((item, i) => (
-                    <div key={i} onClick={item.action} style={{ padding: "10px 16px", cursor: "pointer", fontSize: 13, color: item.label === "Sign Out" ? COLORS.danger : COLORS.textPrimary, borderBottom: `1px solid ${COLORS.border}` }}
-                      onMouseEnter={e => e.currentTarget.style.background = COLORS.bgInput}
-                      onMouseLeave={e => e.currentTarget.style.background = "transparent"}>{item.label}</div>
-                  ))}
+
+          {/* Desktop auth */}
+          <div className="nav-desktop-auth">
+            {user ? (
+              <div style={{ position: "relative" }}>
+                <div onClick={() => setMenuOpen(!menuOpen)} style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", background: COLORS.bgPanel, border: `1px solid ${COLORS.border}`, borderRadius: 20, padding: "4px 12px" }}>
+                  <div style={{ width: 28, height: 28, borderRadius: "50%", background: COLORS.green1, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700 }}>{user.avatar}</div>
+                  <span style={{ fontSize: 13, color: COLORS.textPrimary }}>{user.username}</span>
+                  {user.role !== "member" && <span className="badge" style={{ background: COLORS.gold, color: "#111", fontSize: 10 }}>{user.role}</span>}
+                  <span style={{ color: COLORS.textMuted, fontSize: 10 }}>▼</span>
                 </div>
+                {menuOpen && (
+                  <div style={{ position: "absolute", top: "110%", right: 0, background: COLORS.bgPanel, border: `1px solid ${COLORS.border}`, borderRadius: 8, overflow: "hidden", minWidth: 160, zIndex: 999 }}>
+                    {[{ label: "My Profile", action: () => { setPage("profile"); setMenuOpen(false); } }, { label: "My Watchlist", action: () => { setPage("watchlist"); setMenuOpen(false); } }, ...(["admin", "moderator", "editor"].includes(user.role) ? [{ label: "⚙️ Admin Panel", action: () => { setPage("admin"); setMenuOpen(false); } }] : []), { label: "Sign Out", action: () => { logout(); setMenuOpen(false); } }].map((item, i) => (
+                      <div key={i} onClick={item.action} style={{ padding: "10px 16px", cursor: "pointer", fontSize: 13, color: item.label === "Sign Out" ? COLORS.danger : COLORS.textPrimary, borderBottom: `1px solid ${COLORS.border}` }}
+                        onMouseEnter={e => e.currentTarget.style.background = COLORS.bgInput}
+                        onMouseLeave={e => e.currentTarget.style.background = "transparent"}>{item.label}</div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div style={{ display: "flex", gap: 8 }}>
+                <Btn size="sm" variant="ghost" onClick={() => openAuth("login")}>Sign In</Btn>
+                <Btn size="sm" onClick={() => openAuth("register")}>Register</Btn>
+              </div>
+            )}
+          </div>
+
+          {/* Hamburger - mobile only */}
+          <div style={{ flex: 1 }} className="nav-desktop-spacer-mobile" />
+          <button className="nav-hamburger" onClick={() => setMobileOpen(!mobileOpen)} aria-label="Menu">
+            {mobileOpen ? "✕" : "☰"}
+          </button>
+        </div>
+
+        {/* Mobile dropdown menu */}
+        {mobileOpen && (
+          <div className="nav-mobile-menu">
+            <input value={search} onChange={e => doSearch(e.target.value)} placeholder="🔍 Search dramas..." />
+            {results.length > 0 && (
+              <div style={{ background: COLORS.bgPanel, border: `1px solid ${COLORS.border}`, borderRadius: 8, overflow: "hidden", marginBottom: 10 }}>
+                {results.map(d => (
+                  <div key={d.id} onClick={() => { openDramaPage(d); setSearch(""); setResults([]); setMobileOpen(false); }} style={{ padding: "8px 12px", cursor: "pointer", fontSize: 13, borderBottom: `1px solid ${COLORS.border}`, display: "flex", alignItems: "center", gap: 10, background: COLORS.bgPanel }}>
+                    <img src={d.poster} alt={d.title} style={{ width: 28, height: 40, objectFit: "cover", borderRadius: 3 }} />
+                    <div>
+                      <div style={{ color: COLORS.textPrimary }}>{d.title}</div>
+                      <div style={{ color: COLORS.textMuted, fontSize: 11 }}>{d.year} · {d.network}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="nav-mobile-links">
+              {navLinks.map(l => (
+                <button key={l.key} onClick={() => handleMobileNav(l.key)} className={page === l.key ? "active" : ""}>{l.label}</button>
+              ))}
+            </div>
+            <div className="nav-mobile-auth">
+              {user ? (
+                <>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1 }}>
+                    <div style={{ width: 32, height: 32, borderRadius: "50%", background: COLORS.green1, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, flexShrink: 0 }}>{user.avatar}</div>
+                    <span style={{ fontSize: 13, color: COLORS.textPrimary }}>{user.username}</span>
+                    {user.role !== "member" && <span className="badge" style={{ background: COLORS.gold, color: "#111", fontSize: 10 }}>{user.role}</span>}
+                  </div>
+                  <Btn size="sm" variant="ghost" onClick={() => { setPage("profile"); setMobileOpen(false); }}>Profile</Btn>
+                  <Btn size="sm" variant="ghost" onClick={() => { setPage("watchlist"); setMobileOpen(false); }}>Watchlist</Btn>
+                  {["admin", "moderator", "editor"].includes(user.role) && <Btn size="sm" variant="ghost" onClick={() => { setPage("admin"); setMobileOpen(false); }}>Admin</Btn>}
+                  <Btn size="sm" variant="danger" onClick={() => { logout(); setMobileOpen(false); }}>Sign Out</Btn>
+                </>
+              ) : (
+                <>
+                  <Btn size="sm" variant="ghost" onClick={() => { openAuth("login"); setMobileOpen(false); }}>Sign In</Btn>
+                  <Btn size="sm" onClick={() => { openAuth("register"); setMobileOpen(false); }}>Register</Btn>
+                </>
               )}
             </div>
-          ) : (
-            <div style={{ display: "flex", gap: 8 }}>
-              <Btn size="sm" variant="ghost" onClick={() => openAuth("login")}>Sign In</Btn>
-              <Btn size="sm" onClick={() => openAuth("register")}>Register</Btn>
-            </div>
-          )}
-        </div>
+          </div>
+        )}
       </nav>
       {selectedDrama && <DramaModal drama={selectedDrama} onClose={() => setSelectedDrama(null)} />}
     </>
@@ -1412,23 +1376,23 @@ const HomePage = ({ setPage }) => {
     <div className="fade-in">
       {/* Hero */}
       {featured && (
-        <div style={{ position: "relative", height: 420, overflow: "hidden", marginBottom: 40 }}>
+        <div style={{ position: "relative", height: 420, overflow: "hidden", marginBottom: 40 }} className="hero-section">
           <img src={featured.poster} alt={featured.title} style={{ width: "100%", height: "100%", objectFit: "cover", filter: "blur(4px) brightness(0.3)", transform: "scale(1.05)" }} />
           <div style={{ position: "absolute", inset: 0, background: `linear-gradient(135deg, rgba(15,26,15,0.95) 0%, rgba(15,26,15,0.5) 100%)` }} />
           <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", padding: "0 60px" }}>
-            <div style={{ display: "flex", gap: 32, alignItems: "center", maxWidth: 1200, margin: "0 auto", width: "100%" }}>
-              <img src={featured.poster} alt={featured.title} style={{ width: 160, height: 230, objectFit: "cover", borderRadius: 10, boxShadow: `0 8px 40px rgba(0,0,0,0.6), 0 0 0 2px ${COLORS.green1}` }} />
+            <div className="hero-inner" style={{ display: "flex", gap: 32, alignItems: "center", maxWidth: 1200, margin: "0 auto", width: "100%" }}>
+              <img src={featured.poster} alt={featured.title} className="hero-poster" style={{ width: 160, height: 230, objectFit: "cover", borderRadius: 10, boxShadow: `0 8px 40px rgba(0,0,0,0.6), 0 0 0 2px ${COLORS.green1}` }} />
               <div>
                 <div style={{ color: COLORS.green4, fontSize: 13, fontWeight: 600, letterSpacing: 2, textTransform: "uppercase", marginBottom: 8 }}>✦ Featured Drama</div>
-                <h1 style={{ fontFamily: "Cinzel", fontSize: 36, color: "#fff", marginBottom: 6, textShadow: "0 2px 20px rgba(0,0,0,0.8)" }}>{featured.title}</h1>
+                <h1 className="hero-title" style={{ fontFamily: "Cinzel", fontSize: 36, color: "#fff", marginBottom: 6, textShadow: "0 2px 20px rgba(0,0,0,0.8)" }}>{featured.title}</h1>
                 
-                <div style={{ display: "flex", gap: 16, alignItems: "center", marginBottom: 14 }}>
+                <div style={{ display: "flex", gap: 16, alignItems: "center", marginBottom: 14, flexWrap: "wrap", justifyContent: "inherit" }}>
                   <span style={{ color: COLORS.starFilled, fontWeight: 700, fontSize: 20 }}>★ {featured.rating}</span>
                   <span className="badge" style={{ background: COLORS.green1, color: "#fff" }}>{featured.status}</span>
                   <span style={{ color: COLORS.textSecondary, fontSize: 13 }}>{featured.network} · {featured.year}</span>
                 </div>
-                <p style={{ color: COLORS.textSecondary, maxWidth: 480, lineHeight: 1.7, fontSize: 14, marginBottom: 16 }}>{featured.synopsis.slice(0, 180)}...</p>
-                <div style={{ display: "flex", gap: 10 }}>
+                <p className="hero-synopsis" style={{ color: COLORS.textSecondary, maxWidth: 480, lineHeight: 1.7, fontSize: 14, marginBottom: 16 }}>{featured.synopsis.slice(0, 180)}...</p>
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "inherit" }}>
                   <Btn onClick={() => openDramaPage(featured)}>▶ View Details</Btn>
                   <Btn variant="ghost" onClick={() => setPage("dramas")}>Browse All</Btn>
                 </div>
@@ -1457,7 +1421,7 @@ const HomePage = ({ setPage }) => {
               <h2 style={{ fontFamily: "Cinzel", fontSize: 20, color: COLORS.textPrimary }}>{section.title}</h2>
               <span onClick={() => setPage("dramas")} style={{ fontSize: 13, color: COLORS.green3, cursor: "pointer" }}>View All →</span>
             </div>
-            <div style={{ display: "flex", gap: 14, overflowX: "auto", paddingBottom: 8 }}>
+            <div className="h-scroll-row" style={{ display: "flex", gap: 14, overflowX: "auto", paddingBottom: 8 }}>
               {section.dramas.map(d => <DramaCard key={d.id} drama={d} onOpen={openDramaPage} />)}
             </div>
           </div>
@@ -1470,7 +1434,7 @@ const HomePage = ({ setPage }) => {
             <h2 style={{ fontFamily: "Cinzel", fontSize: 20, color: COLORS.textPrimary }}>🎭 Popular Actors & Creators</h2>
             <span onClick={() => setPage("dramas")} style={{ fontSize: 13, color: COLORS.green3, cursor: "pointer" }}>Explore Cast →</span>
           </div>
-          <div style={{ display: "flex", gap: 14, overflowX: "auto", paddingBottom: 8 }}>
+          <div className="h-scroll-row" style={{ display: "flex", gap: 14, overflowX: "auto", paddingBottom: 8 }}>
             {(db.people || []).slice(0, 10).map(p => (
               <Card key={p.id || p.name} onClick={() => openPersonPage(p)} style={{ width: 145, flexShrink: 0, padding: 12, textAlign: "center" }}>
                 <img src={personPhoto(p)} alt={p.name} style={{ width: 76, height: 76, borderRadius: "50%", objectFit: "cover", border: `2px solid ${COLORS.green1}`, marginBottom: 8 }} />
@@ -1487,7 +1451,7 @@ const HomePage = ({ setPage }) => {
             <h2 style={{ fontFamily: "Cinzel", fontSize: 20, color: COLORS.textPrimary }}>🎥 Pakistani Movies</h2>
             <span onClick={() => setPage("movies")} style={{ fontSize: 13, color: COLORS.green3, cursor: "pointer" }}>View All →</span>
           </div>
-          <div style={{ display: "flex", gap: 14, overflowX: "auto", paddingBottom: 8 }}>
+          <div className="h-scroll-row" style={{ display: "flex", gap: 14, overflowX: "auto", paddingBottom: 8 }}>
             {(db.movies || []).slice(0, 8).map(m => <MovieCard key={m.id} movie={m} onOpen={openMoviePage} />)}
           </div>
         </div>
