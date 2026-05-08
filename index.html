@@ -63,6 +63,144 @@ const GlobalStyle = () => (
     .tooltip { position: relative; }
     .tooltip:hover .tip { display: block; }
     .tip { display: none; position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%); background: ${COLORS.bgCard}; border: 1px solid ${COLORS.border}; color: ${COLORS.textSecondary}; font-size: 12px; padding: 4px 10px; border-radius: 6px; white-space: nowrap; z-index: 100; }
+
+    /* MOBILE RESPONSIVE FIX */
+
+    html, body { width: 100%; overflow-x: hidden; }
+    img { max-width: 100%; }
+    @media (max-width: 768px) {
+      body { overflow-x: hidden; }
+      nav { position: sticky !important; top: 0; }
+      nav > div {
+        height: auto !important;
+        min-height: 60px !important;
+        padding: 8px 12px !important;
+        gap: 8px !important;
+        flex-wrap: wrap !important;
+        align-items: center !important;
+      }
+      nav > div > div:first-child {
+        width: 100% !important;
+        align-items: center !important;
+        text-align: center !important;
+        margin-bottom: 4px !important;
+      }
+      nav > div > div:first-child span:first-child {
+        font-size: 18px !important;
+      }
+      nav > div > div:nth-child(2) {
+        order: 3 !important;
+        width: 100% !important;
+        overflow-x: auto !important;
+        white-space: nowrap !important;
+        display: flex !important;
+        justify-content: flex-start !important;
+        padding-bottom: 4px !important;
+        margin-left: 0 !important;
+      }
+      nav > div > div:nth-child(2) button {
+        flex: 0 0 auto !important;
+        font-size: 12px !important;
+        padding: 6px 10px !important;
+      }
+      nav input[placeholder*="Search"] {
+        width: 135px !important;
+        font-size: 12px !important;
+        padding: 6px 10px !important;
+      }
+      nav > div > div[style*="flex: 1"] {
+        display: none !important;
+      }
+      .modal-box {
+        width: 96vw !important;
+        max-width: 96vw !important;
+        padding: 16px !important;
+      }
+    }
+
+    @media (max-width: 600px) {
+      body { font-size: 14px; }
+      h1 { font-size: 26px !important; }
+      h2 { font-size: 18px !important; }
+
+      /* Hero section */
+      div[style*="height: 420px"] {
+        height: auto !important;
+        min-height: 0 !important;
+        padding: 22px 0 !important;
+        margin-bottom: 24px !important;
+      }
+      div[style*="height: 420px"] > img {
+        position: absolute !important;
+      }
+      div[style*="height: 420px"] > div[style*="display: flex"] {
+        position: relative !important;
+        padding: 20px 16px !important;
+      }
+      div[style*="height: 420px"] div[style*="maxWidth: 1200"] {
+        flex-direction: column !important;
+        align-items: center !important;
+        gap: 16px !important;
+        text-align: center !important;
+      }
+      div[style*="height: 420px"] img[alt] {
+        width: 145px !important;
+        height: 210px !important;
+      }
+      div[style*="height: 420px"] p {
+        max-width: 100% !important;
+        font-size: 13px !important;
+      }
+      div[style*="height: 420px"] h1 {
+        font-size: 28px !important;
+        line-height: 1.15 !important;
+      }
+
+      /* Main containers */
+      div[style*="maxWidth: 1200"], div[style*="maxWidth: 1150"], div[style*="maxWidth: 1100"] {
+        max-width: 100% !important;
+        padding-left: 14px !important;
+        padding-right: 14px !important;
+      }
+
+      /* Stats grid */
+      div[style*="gridTemplateColumns: \"repeat(4, 1fr)\""] {
+        grid-template-columns: 1fr 1fr !important;
+        gap: 10px !important;
+      }
+
+      /* Drama/movie page grid */
+      div[style*="gridTemplateColumns: \"minmax(0, 2fr) 330px\""] {
+        display: block !important;
+      }
+      aside {
+        margin-top: 18px !important;
+      }
+
+      /* Detail page hero */
+      div[style*="minHeight: 360"] div[style*="display: flex"] {
+        flex-direction: column !important;
+        text-align: center !important;
+        padding: 24px 14px !important;
+      }
+      div[style*="minHeight: 360"] img[alt] {
+        width: 150px !important;
+        height: 220px !important;
+      }
+      div[style*="minHeight: 360"] h1 {
+        font-size: 30px !important;
+      }
+
+      /* Cards and horizontal rows */
+      .fade-in {
+        max-width: 100vw !important;
+        overflow-x: hidden !important;
+      }
+      div[style*="overflowX: auto"] {
+        -webkit-overflow-scrolling: touch !important;
+      }
+    }
+
   `}</style>
 );
 
@@ -391,7 +529,7 @@ const MoviePage = ({ movie, setPage }) => {
           <div style={{ flex: 1 }}>
             <button onClick={() => setPage("movies")} style={{ background: "transparent", border: "none", color: COLORS.green3, fontSize: 13, marginBottom: 14, cursor: "pointer" }}>← Back to Movies</button>
             <h1 style={{ fontFamily: "Cinzel", fontSize: 38, color: "#fff", marginBottom: 4 }}>{movie.title}</h1>
-            <div style={{ fontFamily: "Noto Nastaliq Urdu", fontSize: 24, color: COLORS.green4, marginBottom: 12, direction: "rtl", textAlign: "left" }}>{movie.urduTitle}</div>
+            
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
               <span className="badge" style={{ background: COLORS.gold, color: "#111" }}>Movie</span>
               <span className="badge" style={{ background: COLORS.bgPanel, color: COLORS.textSecondary, border: `1px solid ${COLORS.border}` }}>{movie.year}</span>
@@ -539,7 +677,7 @@ const DramaModal = ({ drama, onClose }) => {
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
               <div>
                 <h2 style={{ fontFamily: "Cinzel", color: COLORS.textPrimary, fontSize: 22, marginBottom: 2 }}>{drama.title}</h2>
-                <div style={{ fontFamily: "Noto Nastaliq Urdu", fontSize: 18, color: COLORS.green4, marginBottom: 8, direction: "rtl" }}>{drama.urduTitle}</div>
+                
               </div>
               <button onClick={onClose} style={{ background: "none", border: "none", color: COLORS.textMuted, fontSize: 22, cursor: "pointer", padding: "0 4px" }}>✕</button>
             </div>
@@ -737,7 +875,7 @@ const DramaPage = ({ drama, setPage }) => {
           <div style={{ flex: 1 }}>
             <button onClick={() => setPage("dramas")} style={{ background: "transparent", border: "none", color: COLORS.green3, fontSize: 13, marginBottom: 14, cursor: "pointer" }}>← Back to Dramas</button>
             <h1 style={{ fontFamily: "Cinzel", fontSize: 38, color: "#fff", marginBottom: 4 }}>{drama.title}</h1>
-            <div style={{ fontFamily: "Noto Nastaliq Urdu", fontSize: 24, color: COLORS.green4, marginBottom: 12, direction: "rtl", textAlign: "left" }}>{drama.urduTitle}</div>
+            
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
               <span className="badge" style={{ background: COLORS.green1, color: "#fff" }}>{drama.status}</span>
               <span className="badge" style={{ background: COLORS.bgPanel, color: COLORS.textSecondary, border: `1px solid ${COLORS.border}` }}>{drama.network}</span>
@@ -1085,8 +1223,8 @@ const Navbar = ({ page, setPage, openAuth }) => {
       <nav style={{ background: COLORS.bgCard, borderBottom: `2px solid ${COLORS.green1}`, position: "sticky", top: 0, zIndex: 500 }}>
         <div style={{ maxWidth: 1200, margin: "0 auto", padding: "0 20px", display: "flex", alignItems: "center", gap: 16, height: 58 }}>
           <div onClick={() => setPage("home")} style={{ cursor: "pointer", display: "flex", flexDirection: "column", lineHeight: 1 }}>
-            <span style={{ fontFamily: "Cinzel", fontSize: 20, fontWeight: 700, color: COLORS.green3 }}>PakDramaList</span>
-            <span style={{ fontFamily: "Noto Nastaliq Urdu", fontSize: 12, color: COLORS.green4, direction: "rtl" }}>پاک ڈراما ہب</span>
+            <span style={{ fontFamily: "Cinzel", fontSize: 20, fontWeight: 700, color: COLORS.green3, whiteSpace: "nowrap" }}>PakDramaList</span>
+            
           </div>
           <div style={{ display: "flex", gap: 2, marginLeft: 12 }}>
             {navLinks.map(l => (
@@ -1165,7 +1303,7 @@ const HomePage = ({ setPage }) => {
               <div>
                 <div style={{ color: COLORS.green4, fontSize: 13, fontWeight: 600, letterSpacing: 2, textTransform: "uppercase", marginBottom: 8 }}>✦ Featured Drama</div>
                 <h1 style={{ fontFamily: "Cinzel", fontSize: 36, color: "#fff", marginBottom: 6, textShadow: "0 2px 20px rgba(0,0,0,0.8)" }}>{featured.title}</h1>
-                <div style={{ fontFamily: "Noto Nastaliq Urdu", fontSize: 20, color: COLORS.green4, marginBottom: 12, direction: "rtl" }}>{featured.urduTitle}</div>
+                
                 <div style={{ display: "flex", gap: 16, alignItems: "center", marginBottom: 14 }}>
                   <span style={{ color: COLORS.starFilled, fontWeight: 700, fontSize: 20 }}>★ {featured.rating}</span>
                   <span className="badge" style={{ background: COLORS.green1, color: "#fff" }}>{featured.status}</span>
@@ -1361,7 +1499,7 @@ const TopRatedPage = () => {
             <img src={d.poster} alt={d.title} style={{ width: 60, height: 85, objectFit: "cover", borderRadius: 6 }} />
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 16, fontWeight: 600, color: COLORS.textPrimary, marginBottom: 3 }}>{d.title}</div>
-              <div style={{ fontFamily: "Noto Nastaliq Urdu", fontSize: 14, color: COLORS.green4, direction: "rtl", marginBottom: 4 }}>{d.urduTitle}</div>
+              
               <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 6 }}>{d.network} · {d.year} · {d.director}</div>
               <div>{d.genres.slice(0, 3).map(g => <span key={g} className="tag" style={{ fontSize: 11 }}>{g}</span>)}</div>
             </div>
@@ -2332,7 +2470,7 @@ function App() {
           </main>
           <footer style={{ background: COLORS.bgCard, borderTop: `1px solid ${COLORS.border}`, padding: "28px 20px", marginTop: 40, textAlign: "center" }}>
             <div style={{ fontFamily: "Cinzel", fontSize: 18, color: COLORS.green3, marginBottom: 4 }}>{settings.siteName || "PakDramaList"}</div>
-            <div style={{ fontFamily: "Noto Nastaliq Urdu", fontSize: 14, color: COLORS.green4, direction: "rtl", marginBottom: 8 }}>{settings.tagline || "پاکستانی ڈراموں کی دنیا"}</div>
+            
             <div style={{ color: COLORS.textMuted, fontSize: 12 }}>© 2026 PakDramaList. Pakistani dramas, movies & stars.</div>
           </footer>
           {authMode && <AuthModal onClose={() => setAuthMode(null)} onSuccess={login} />}
