@@ -201,6 +201,124 @@ const GlobalStyle = () => (
       }
     }
 
+
+
+    /* STRONG MOBILE DETAIL PAGE FIX */
+    @media (max-width: 700px) {
+      * {
+        max-width: 100vw;
+      }
+
+      body, #root {
+        width: 100vw !important;
+        max-width: 100vw !important;
+        overflow-x: hidden !important;
+      }
+
+      /* Force all big desktop flex rows to stack on mobile */
+      div[style*="display: flex"][style*="gap: 28"],
+      div[style*="display: flex"][style*="gap: 32"],
+      div[style*="display: flex"][style*="gap: 24"],
+      div[style*="display: flex"][style*="gap: 22"],
+      div[style*="display: flex"][style*="alignItems: center"],
+      div[style*="display: flex"][style*="align-items: center"] {
+        flex-direction: column !important;
+        align-items: center !important;
+        text-align: center !important;
+        width: 100% !important;
+      }
+
+      /* Drama/movie detail hero content */
+      div[style*="minHeight: 360"],
+      div[style*="minHeight: 340"] {
+        min-height: auto !important;
+        height: auto !important;
+        overflow: hidden !important;
+      }
+
+      div[style*="minHeight: 360"] > div,
+      div[style*="minHeight: 340"] > div {
+        width: 100% !important;
+        max-width: 100% !important;
+      }
+
+      div[style*="minHeight: 360"] div[style*="maxWidth: 1150"],
+      div[style*="minHeight: 340"] div[style*="maxWidth: 1150"] {
+        display: flex !important;
+        flex-direction: column !important;
+        align-items: center !important;
+        text-align: center !important;
+        padding: 22px 14px !important;
+        gap: 16px !important;
+        width: 100% !important;
+      }
+
+      div[style*="minHeight: 360"] img,
+      div[style*="minHeight: 340"] img {
+        width: 150px !important;
+        height: 220px !important;
+        object-fit: cover !important;
+        flex-shrink: 0 !important;
+      }
+
+      div[style*="minHeight: 360"] h1,
+      div[style*="minHeight: 340"] h1 {
+        font-size: 28px !important;
+        line-height: 1.15 !important;
+        white-space: normal !important;
+        word-break: break-word !important;
+        text-align: center !important;
+      }
+
+      div[style*="minHeight: 360"] p,
+      div[style*="minHeight: 340"] p {
+        max-width: 100% !important;
+        width: 100% !important;
+        font-size: 14px !important;
+        line-height: 1.6 !important;
+        text-align: center !important;
+      }
+
+      div[style*="display: flex"][style*="flexWrap: wrap"],
+      div[style*="display: flex"][style*="flex-wrap: wrap"] {
+        justify-content: center !important;
+      }
+
+      select {
+        max-width: 92vw !important;
+      }
+
+      /* Main detail body should become one column */
+      div[style*="gridTemplateColumns: \"minmax(0, 2fr) 330px\""],
+      div[style*="grid-template-columns: minmax(0, 2fr) 330px"] {
+        display: block !important;
+        width: 100% !important;
+        padding-left: 14px !important;
+        padding-right: 14px !important;
+      }
+
+      aside {
+        width: 100% !important;
+        max-width: 100% !important;
+      }
+
+      /* Prevent horizontal card rows from forcing page width */
+      div[style*="overflowX: auto"] {
+        max-width: 100% !important;
+        overflow-x: auto !important;
+      }
+
+      /* Navbar should not create horizontal overflow */
+      nav {
+        max-width: 100vw !important;
+        overflow-x: hidden !important;
+      }
+
+      nav > div {
+        max-width: 100vw !important;
+      }
+    }
+
   `}</style>
 );
 
