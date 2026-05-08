@@ -1,0 +1,2349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PakDramaList</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.development.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.development.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+const { useState, useEffect, createContext, useContext, useRef } = React;
+
+// ─── THEME ───────────────────────────────────────────────────────────────────
+const COLORS = {
+  bg: "#0f1a0f",
+  bgCard: "#152015",
+  bgPanel: "#1a2a1a",
+  bgInput: "#1e2e1e",
+  border: "#2d4a2d",
+  borderLight: "#3a5c3a",
+  green1: "#4a7c59",   // muted sage
+  green2: "#5c9e6e",   // medium
+  green3: "#72b884",   // accent
+  green4: "#a8d5b5",   // light
+  greenText: "#c5e8cf",
+  gold: "#c9a84c",
+  goldLight: "#e2c87a",
+  textPrimary: "#e8f0e8",
+  textSecondary: "#9db89d",
+  textMuted: "#6a8a6a",
+  danger: "#c0392b",
+  dangerBg: "#2a1515",
+  starFilled: "#f0c040",
+};
+
+// ─── GLOBAL STYLES ────────────────────────────────────────────────────────────
+const GlobalStyle = () => (
+  <style>{`
+    @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Noto+Nastaliq+Urdu&family=Source+Serif+4:ital,wght@0,300;0,400;0,600;1,400&display=swap');
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: ${COLORS.bg}; color: ${COLORS.textPrimary}; font-family: 'Source Serif 4', serif; min-height: 100vh; }
+    ::-webkit-scrollbar { width: 6px; } ::-webkit-scrollbar-track { background: ${COLORS.bgCard}; } ::-webkit-scrollbar-thumb { background: ${COLORS.green1}; border-radius: 3px; }
+    a { color: ${COLORS.green3}; text-decoration: none; cursor: pointer; }
+    input, textarea, select { font-family: inherit; }
+    button { font-family: inherit; cursor: pointer; }
+    .fade-in { animation: fadeIn 0.4s ease; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+    .slide-in { animation: slideIn 0.3s ease; }
+    @keyframes slideIn { from { opacity: 0; transform: translateX(-12px); } to { opacity: 1; transform: translateX(0); } }
+    .star-row { display: flex; gap: 2px; cursor: pointer; }
+    .star { font-size: 18px; transition: transform 0.1s; }
+    .star:hover { transform: scale(1.2); }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 99px; font-size: 11px; font-weight: 600; letter-spacing: 0.5px; }
+    .tag { display: inline-block; padding: 3px 10px; border-radius: 4px; font-size: 12px; background: ${COLORS.bgPanel}; border: 1px solid ${COLORS.border}; color: ${COLORS.green4}; margin: 2px; cursor: pointer; transition: background 0.2s; }
+    .tag:hover { background: ${COLORS.green1}; color: #fff; }
+    .progress-bar { height: 4px; background: ${COLORS.border}; border-radius: 2px; overflow: hidden; }
+    .progress-fill { height: 100%; background: linear-gradient(90deg, ${COLORS.green2}, ${COLORS.green3}); border-radius: 2px; transition: width 0.5s ease; }
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.75); z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 20px; animation: fadeIn 0.2s ease; }
+    .modal-box { background: ${COLORS.bgPanel}; border: 1px solid ${COLORS.border}; border-radius: 12px; padding: 28px; width: 100%; max-width: 520px; max-height: 85vh; overflow-y: auto; }
+    .tooltip { position: relative; }
+    .tooltip:hover .tip { display: block; }
+    .tip { display: none; position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%); background: ${COLORS.bgCard}; border: 1px solid ${COLORS.border}; color: ${COLORS.textSecondary}; font-size: 12px; padding: 4px 10px; border-radius: 6px; white-space: nowrap; z-index: 100; }
+  `}</style>
+);
+
+// ─── DATA STORE (localStorage) ────────────────────────────────────────────────
+const DB_KEY = "pkdramalist_db";
+const getDB = () => {
+  try {
+    const stored = JSON.parse(localStorage.getItem(DB_KEY));
+    return stored ? migrateDB(stored) : initDB();
+  } catch { return initDB(); }
+};
+const saveDB = (db) => localStorage.setItem(DB_KEY, JSON.stringify(db));
+
+const findPersonByName = (people, name) => (people || []).find(p => p.name.toLowerCase() === String(name || "").toLowerCase());
+const personName = (idOrName, db = getDB()) => {
+  const person = (db.people || []).find(p => p.id === idOrName || p.name === idOrName);
+  return person ? person.name : idOrName;
+};
+const personPhoto = (person) => person?.photo || `https://placehold.co/120x120/1a2a1a/72b884?text=${encodeURIComponent((person?.name || "?")[0])}`;
+
+const migrateDB = (db) => {
+  let changed = false;
+  if (!db.people) { db.people = samplePeople; changed = true; }
+  db.people = db.people.map(p => ({ knownFor: [], ...p, roles: p.roles || [p.primaryRole || "Actor"] }));
+  db.dramas = (db.dramas || []).map(d => {
+    const castNames = Array.isArray(d.cast) ? d.cast : String(d.cast || "").split(",").map(x => x.trim()).filter(Boolean);
+    const castIds = d.castIds || castNames.map(n => findPersonByName(db.people, n)?.id).filter(Boolean);
+    const directorNames = Array.isArray(d.directors) ? d.directors : String(d.director || "").split(",").map(x => x.trim()).filter(Boolean);
+    const writerNames = Array.isArray(d.writers) ? d.writers : String(d.writer || "").split(",").map(x => x.trim()).filter(Boolean);
+    const directorIds = d.directorIds || directorNames.map(n => findPersonByName(db.people, n)?.id).filter(Boolean);
+    const writerIds = d.writerIds || writerNames.map(n => findPersonByName(db.people, n)?.id).filter(Boolean);
+    if (!d.castIds || !d.directorIds || !d.writerIds) changed = true;
+    return { ...d, cast: castNames, castIds, directorIds, writerIds };
+  });
+  if (changed) saveDB(db);
+  return db;
+};
+
+const GENRES = ["Romance","Action","Comedy","Thriller","Family","Historical","Mystery","Crime","Political","Social","Fantasy","Horror","Drama","Medical"];
+const NETWORKS = ["ARY Digital","Geo TV","Hum TV","A-Plus","Express Entertainment","TV One","8XM","BOL Entertainment","Urdu1","Sahara One"];
+const DRAMA_STATUS = ["Ongoing","Completed","Upcoming","Hiatus"];
+const ROLES = ["admin","moderator","editor","member"];
+const PEOPLE_ROLES = ["Actor", "Director", "Writer", "Producer", "Music", "Cinematographer"];
+
+
+const sampleMovies = [
+  { id: "m1", title: "The Legend of Maula Jatt", urduTitle: "دی لیجنڈ آف مولا جٹ", poster: "https://placehold.co/220x310/1a2a1a/c9a84c?text=Maula+Jatt", synopsis: "A modern Pakistani action epic about rivalry, revenge, and legacy.", genres: ["Action","Drama"], year: 2022, status: "Released", rating: 8.8, ratingCount: 18500, cast: ["Fawad Khan","Mahira Khan","Hamza Ali Abbasi"], director: "Bilal Lashari", writer: "Nasir Adeeb", views: 155000, tags: ["action","epic","cinema"], createdAt: Date.now()-7000000 },
+  { id: "m2", title: "Bol", urduTitle: "بول", poster: "https://placehold.co/220x310/152015/72b884?text=Bol", synopsis: "A powerful social drama exploring family, gender, and society.", genres: ["Social","Drama"], year: 2011, status: "Released", rating: 8.4, ratingCount: 9700, cast: ["Mahira Khan","Humaima Malick","Atif Aslam"], director: "Shoaib Mansoor", writer: "Shoaib Mansoor", views: 74000, tags: ["social","classic","emotional"], createdAt: Date.now()-6500000 },
+  { id: "m3", title: "Punjab Nahi Jaungi", urduTitle: "پنجاب نہیں جاؤں گی", poster: "https://placehold.co/220x310/1a2a1a/5c9e6e?text=PNJ", synopsis: "A romantic comedy-drama about love, family pressure, and cultural differences.", genres: ["Romance","Comedy","Drama"], year: 2017, status: "Released", rating: 7.8, ratingCount: 8200, cast: ["Humayun Saeed","Mehwish Hayat","Urwa Hocane"], director: "Nadeem Baig", writer: "Khalil-ur-Rehman Qamar", views: 68000, tags: ["romance","family","comedy"], createdAt: Date.now()-6000000 },
+  { id: "m4", title: "Actor in Law", urduTitle: "ایکٹر ان لا", poster: "https://placehold.co/220x310/152015/a8d5b5?text=Actor+in+Law", synopsis: "A comedy-drama about an aspiring actor who finds unexpected fame through courtroom performances.", genres: ["Comedy","Drama"], year: 2016, status: "Released", rating: 7.6, ratingCount: 6400, cast: ["Fahad Mustafa","Mehwish Hayat","Om Puri"], director: "Nabeel Qureshi", writer: "Fizza Ali Meerza", views: 52000, tags: ["comedy","courtroom","satire"], createdAt: Date.now()-5500000 }
+];
+
+const samplePeople = [
+  { id: "p1", name: "Hania Amir", roles: ["Actor"], photo: "https://placehold.co/120x120/1a2a1a/72b884?text=HA", bio: "Pakistani television and film actor.", birthYear: "1997", knownFor: ["Meray Humsafar", "Kabhi Main Kabhi Tum"] },
+  { id: "p2", name: "Farhan Saeed", roles: ["Actor", "Music"], photo: "https://placehold.co/120x120/152015/5c9e6e?text=FS", bio: "Actor and singer known for romantic drama roles.", birthYear: "1984", knownFor: ["Meray Humsafar"] },
+  { id: "p3", name: "Fahad Mustafa", roles: ["Actor", "Producer"], photo: "https://placehold.co/120x120/1a2a1a/c9a84c?text=FM", bio: "Actor, host, and producer.", birthYear: "1983", knownFor: ["Kabhi Main Kabhi Tum"] },
+  { id: "p4", name: "Wahaj Ali", roles: ["Actor"], photo: "https://placehold.co/120x120/152015/a8d5b5?text=WA", bio: "Actor known for intense romantic and dramatic roles.", birthYear: "1988", knownFor: ["Tere Bin"] },
+  { id: "p5", name: "Yumna Zaidi", roles: ["Actor"], photo: "https://placehold.co/120x120/1a2a1a/72b884?text=YZ", bio: "Award-winning actor known for powerful performances.", birthYear: "1989", knownFor: ["Tere Bin", "Sinf-e-Aahan"] },
+  { id: "p6", name: "Bilal Abbas Khan", roles: ["Actor"], photo: "https://placehold.co/120x120/152015/5c9e6e?text=BA", bio: "Actor known for versatile drama roles.", birthYear: "1993", knownFor: ["Ishq Murshid"] },
+  { id: "p7", name: "Dur-e-Fishan Saleem", roles: ["Actor"], photo: "https://placehold.co/120x120/1a2a1a/a8d5b5?text=DS", bio: "Pakistani actor known for popular romantic dramas.", birthYear: "1996", knownFor: ["Ishq Murshid"] },
+  { id: "p8", name: "Qasim Ali Mureed", roles: ["Director"], photo: "https://placehold.co/120x120/152015/c9a84c?text=QM", bio: "Television director.", birthYear: "", knownFor: ["Meray Humsafar", "Ishq Murshid"] },
+  { id: "p9", name: "Farhat Ishtiaq", roles: ["Writer"], photo: "https://placehold.co/120x120/1a2a1a/72b884?text=FI", bio: "Writer and novelist known for emotional romantic stories.", birthYear: "", knownFor: ["Meray Humsafar"] },
+  { id: "p10", name: "Badar Mehmood", roles: ["Director"], photo: "https://placehold.co/120x120/152015/5c9e6e?text=BM", bio: "Television director.", birthYear: "", knownFor: ["Kabhi Main Kabhi Tum"] },
+  { id: "p11", name: "Zanjabeel Asim Shah", roles: ["Writer"], photo: "https://placehold.co/120x120/1a2a1a/a8d5b5?text=ZS", bio: "Drama writer.", birthYear: "", knownFor: ["Kabhi Main Kabhi Tum"] },
+  { id: "p12", name: "Siraj ul Haq", roles: ["Director"], photo: "https://placehold.co/120x120/152015/c9a84c?text=SH", bio: "Television director.", birthYear: "", knownFor: ["Tere Bin"] },
+  { id: "p13", name: "Nooran Makhdoom", roles: ["Writer"], photo: "https://placehold.co/120x120/1a2a1a/72b884?text=NM", bio: "Drama writer.", birthYear: "", knownFor: ["Tere Bin"] },
+  { id: "p14", name: "Nadeem Baig", roles: ["Director"], photo: "https://placehold.co/120x120/152015/5c9e6e?text=NB", bio: "Film and television director.", birthYear: "", knownFor: ["Sinf-e-Aahan"] },
+  { id: "p15", name: "Umera Ahmed", roles: ["Writer"], photo: "https://placehold.co/120x120/1a2a1a/c9a84c?text=UA", bio: "Novelist and screenwriter.", birthYear: "", knownFor: ["Sinf-e-Aahan"] },
+  { id: "p16", name: "Shehnaz Parveen", roles: ["Writer"], photo: "https://placehold.co/120x120/152015/a8d5b5?text=SP", bio: "Drama writer.", birthYear: "", knownFor: ["Ishq Murshid"] },
+];
+
+const sampleDramas = [
+  { id: "d1", title: "Meray Humsafar", urduTitle: "میرے ہمسفر", poster: "https://placehold.co/220x310/1a2a1a/72b884?text=Meray+Humsafar", synopsis: "A captivating love story about Hala and Hamza navigating family politics, societal pressures, and their own conflicted emotions. One of the most-watched Pakistani dramas of its era.", genres: ["Romance","Drama","Family"], network: "ARY Digital", year: 2022, episodes: 34, status: "Completed", rating: 8.7, ratingCount: 15420, cast: ["Hania Amir","Farhan Saeed","Samia Mumtaz"], director: "Qasim Ali Mureed", writer: "Farhat Ishtiaq", views: 89400, trailer: "", tags: ["love story","family drama","emotional"], createdAt: Date.now()-8000000 },
+  { id: "d2", title: "Kabhi Main Kabhi Tum", urduTitle: "کبھی میں کبھی تم", poster: "https://placehold.co/220x310/152015/5c9e6e?text=KMKT", synopsis: "A lighthearted and witty romantic comedy following the journey of two very different personalities who are forced into an arranged marriage.", genres: ["Romance","Comedy"], network: "Hum TV", year: 2024, episodes: 46, status: "Completed", rating: 8.9, ratingCount: 22100, cast: ["Fahad Mustafa","Hania Amir","Ejaz Aslam"], director: "Badar Mehmood", writer: "Zanjabeel Asim Shah", views: 120000, trailer: "", tags: ["arranged marriage","comedy","light-hearted"], createdAt: Date.now()-6000000 },
+  { id: "d3", title: "Tere Bin", urduTitle: "تیرے بن", poster: "https://placehold.co/220x310/1a2a1a/a8d5b5?text=Tere+Bin", synopsis: "A passionate and turbulent love story between Murtasim and Meerab, filled with pride, stubbornness, and undeniable attraction.", genres: ["Romance","Drama"], network: "Geo TV", year: 2023, episodes: 62, status: "Completed", rating: 8.5, ratingCount: 18900, cast: ["Wahaj Ali","Yumna Zaidi","Mehmood Aslam"], director: "Siraj ul Haq", writer: "Nooran Makhdoom", views: 145000, trailer: "", tags: ["passionate","rivals to lovers","family drama"], createdAt: Date.now()-4000000 },
+  { id: "d4", title: "Mushk", urduTitle: "مشک", poster: "https://placehold.co/220x310/152015/c9a84c?text=Mushk", synopsis: "A beautifully crafted story of a village girl named Mushk who fights against social injustice and finds love in unexpected places.", genres: ["Romance","Social","Drama"], network: "ARY Digital", year: 2020, episodes: 34, status: "Completed", rating: 8.2, ratingCount: 11200, cast: ["Imran Ashraf","Urwa Hocane","Osama Tahir"], director: "Ahsan Talish", writer: "Imran Ashraf", views: 67000, trailer: "", tags: ["village","social issues","strong female lead"], createdAt: Date.now()-3000000 },
+  { id: "d5", title: "Sinf-e-Aahan", urduTitle: "صنف آہن", poster: "https://placehold.co/220x310/1a2a1a/72b884?text=Sinf-e-Aahan", synopsis: "An inspiring story of young women who join the Pakistan Army, overcoming personal and societal challenges to serve their nation.", genres: ["Action","Drama","Social"], network: "ARY Digital", year: 2022, episodes: 26, status: "Completed", rating: 8.6, ratingCount: 13800, cast: ["Yumna Zaidi","Sajal Aly","Syra Shehroz","Ramsha Khan"], director: "Nadeem Baig", writer: "Umera Ahmed", views: 92000, trailer: "", tags: ["army","feminism","inspirational","patriotic"], createdAt: Date.now()-2000000 },
+  { id: "d6", title: "Ishq Murshid", urduTitle: "عشق مرشد", poster: "https://placehold.co/220x310/152015/5c9e6e?text=Ishq+Murshid", synopsis: "A story of forbidden love between a corporate heiress and a man of lower status, exploring class divides, pride, and the power of true love.", genres: ["Romance","Drama"], network: "Hum TV", year: 2024, episodes: 34, status: "Completed", rating: 9.1, ratingCount: 28500, cast: ["Bilal Abbas Khan","Dur-e-Fishan Saleem","Farooq Rind"], director: "Qasim Ali Mureed", writer: "Shehnaz Parveen", views: 210000, trailer: "", tags: ["class difference","forbidden love","must watch"], createdAt: Date.now()-1000000 },
+];
+
+const initDB = () => {
+  const db = {
+    users: [
+      { id: "u0", username: "admin", email: "admin@pkdramalist.com", password: "admin123", role: "admin", avatar: "A", bio: "Site administrator", joinDate: "2024-01-01", watchlist: [], ratings: {}, reviews: {}, lists: [], following: [], followers: [] },
+      { id: "u1", username: "dramatics", email: "user@test.com", password: "user123", role: "member", avatar: "D", bio: "Pakistani drama enthusiast!", joinDate: "2024-03-15", watchlist: [], ratings: {}, reviews: {}, lists: [], following: [], followers: [] },
+    ],
+    dramas: sampleDramas,
+    movies: sampleMovies,
+    people: samplePeople,
+    reviews: [],
+    comments: [],
+    news: [
+      { id: "n1", title: "Ishq Murshid Sets New Rating Records", body: "The hit drama Ishq Murshid has broken all previous ratings records on Hum TV, achieving a massive 17.9 TVR in its finale.", date: "2024-04-02", author: "admin", image: "https://placehold.co/600x200/1a2a1a/72b884?text=News+Image" },
+      { id: "n2", title: "Fahad Mustafa & Hania Amir to Reunite", body: "The beloved on-screen pair from Kabhi Main Kabhi Tum are reportedly set to star in another project together.", date: "2024-05-10", author: "admin", image: "https://placehold.co/600x200/152015/5c9e6e?text=News+Image" },
+    ],
+    settings: { siteName: "PakDramaList", tagline: "پاکستانی ڈراموں کی دنیا", maintenanceMode: false },
+  };
+  saveDB(db);
+  return db;
+};
+
+// ─── AUTH CONTEXT ─────────────────────────────────────────────────────────────
+const AuthCtx = createContext(null);
+const useAuth = () => useContext(AuthCtx);
+
+// ─── HELPERS ──────────────────────────────────────────────────────────────────
+const avg = (arr) => arr.length ? (arr.reduce((a, b) => a + b, 0) / arr.length).toFixed(1) : "N/A";
+const fmtNum = (n) => n >= 1000 ? (n / 1000).toFixed(1) + "k" : n;
+const genId = () => Math.random().toString(36).slice(2, 10);
+
+const dramaSlug = (title) => (title || "").toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+
+const personSlug = (name) => (name || "")
+  .toLowerCase()
+  .trim()
+  .replace(/[^a-z0-9]+/g, "-")
+  .replace(/^-+|-+$/g, "");
+
+const openPersonPage = (person) => {
+  if (!person || !person.name) return;
+  window.location.hash = "#/person/" + personSlug(person.name);
+  window.scrollTo({ top: 0, behavior: "smooth" });
+};
+
+
+const slugify = (text) => text.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+const dramaUrl = (drama) => "#/drama/" + slugify(drama.title);
+const openDramaPage = (drama) => {
+  if (!drama) return;
+  window.location.hash = "/drama/" + slugify(drama.title);
+  window.scrollTo({ top: 0, behavior: "smooth" });
+};
+
+const openMoviePage = (movie) => {
+  if (!movie) return;
+  window.location.hash = "/movie/" + slugify(movie.title);
+  window.scrollTo({ top: 0, behavior: "smooth" });
+};
+const getRouteFromHash = () => {
+  const hash = window.location.hash.replace(/^#\/?/, "");
+  const [type, slug] = hash.split("/");
+  const db = getDB();
+
+  if (type === "drama") {
+    return {
+      type: "drama",
+      item: db.dramas.find(d => slugify(d.title) === slug || d.id === slug) || null
+    };
+  }
+
+  if (type === "person") {
+    return {
+      type: "person",
+      item: (db.people || []).find(p => personSlug(p.name) === slug || p.id === slug) || null
+    };
+  }
+
+  if (type === "movie") {
+    return {
+      type: "movie",
+      item: (db.movies || []).find(m => slugify(m.title) === slug || m.id === slug) || null
+    };
+  }
+
+  return { type: null, item: null };
+};
+
+const getDramaFromHash = () => {
+  const route = getRouteFromHash();
+  return route.type === "drama" ? route.item : null;
+};
+
+const StarRow = ({ value = 0, max = 10, onChange, size = 18 }) => {
+  const [hover, setHover] = useState(0);
+  return (
+    <div className="star-row" style={{ fontSize: size }}>
+      {Array.from({ length: max }, (_, i) => i + 1).map((s) => (
+        <span key={s} className="star"
+          style={{ color: s <= (hover || value) ? COLORS.starFilled : COLORS.border }}
+          onMouseEnter={() => onChange && setHover(s)}
+          onMouseLeave={() => onChange && setHover(0)}
+          onClick={() => onChange && onChange(s)}>★</span>
+      ))}
+    </div>
+  );
+};
+
+const Btn = ({ children, variant = "primary", size = "md", onClick, disabled, style = {}, type = "button" }) => {
+  const base = { border: "none", borderRadius: 6, cursor: disabled ? "not-allowed" : "pointer", fontFamily: "inherit", fontWeight: 600, transition: "all 0.2s", opacity: disabled ? 0.5 : 1 };
+  const sizes = { sm: { padding: "5px 12px", fontSize: 12 }, md: { padding: "8px 18px", fontSize: 14 }, lg: { padding: "11px 26px", fontSize: 15 } };
+  const variants = {
+    primary: { background: `linear-gradient(135deg, ${COLORS.green1}, ${COLORS.green2})`, color: "#fff" },
+    secondary: { background: COLORS.bgPanel, border: `1px solid ${COLORS.border}`, color: COLORS.textSecondary },
+    danger: { background: COLORS.danger, color: "#fff" },
+    ghost: { background: "transparent", border: `1px solid ${COLORS.border}`, color: COLORS.textSecondary },
+    gold: { background: `linear-gradient(135deg, ${COLORS.gold}, ${COLORS.goldLight})`, color: "#111" },
+  };
+  return <button type={type} onClick={onClick} disabled={disabled} style={{ ...base, ...sizes[size], ...variants[variant], ...style }}>{children}</button>;
+};
+
+const Input = ({ label, value, onChange, type = "text", placeholder = "", required, textarea, rows = 3, options, style = {} }) => (
+  <div style={{ marginBottom: 16 }}>
+    {label && <label style={{ display: "block", fontSize: 13, color: COLORS.textSecondary, marginBottom: 6 }}>{label}{required && " *"}</label>}
+    {textarea ? (
+      <textarea value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} rows={rows}
+        style={{ width: "100%", background: COLORS.bgInput, border: `1px solid ${COLORS.border}`, borderRadius: 6, color: COLORS.textPrimary, padding: "8px 12px", resize: "vertical", ...style }} />
+    ) : options ? (
+      <select value={value} onChange={(e) => onChange(e.target.value)}
+        style={{ width: "100%", background: COLORS.bgInput, border: `1px solid ${COLORS.border}`, borderRadius: 6, color: COLORS.textPrimary, padding: "8px 12px", ...style }}>
+        <option value="">— Select —</option>
+        {options.map((o) => <option key={o} value={o}>{o}</option>)}
+      </select>
+    ) : (
+      <input type={type} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder}
+        style={{ width: "100%", background: COLORS.bgInput, border: `1px solid ${COLORS.border}`, borderRadius: 6, color: COLORS.textPrimary, padding: "8px 12px", ...style }} />
+    )}
+  </div>
+);
+
+const Card = ({ children, style = {}, onClick }) => (
+  <div onClick={onClick} style={{ background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: 10, overflow: "hidden", transition: "border-color 0.2s, transform 0.2s", cursor: onClick ? "pointer" : "default", ...style }}
+    onMouseEnter={(e) => { if (onClick) { e.currentTarget.style.borderColor = COLORS.green2; e.currentTarget.style.transform = "translateY(-2px)"; } }}
+    onMouseLeave={(e) => { if (onClick) { e.currentTarget.style.borderColor = COLORS.border; e.currentTarget.style.transform = "translateY(0)"; } }}>
+    {children}
+  </div>
+);
+
+const PeopleMiniCard = ({ person, credit }) => (
+  <div
+    onClick={() => openPersonPage(person)}
+    title={"Open " + (person?.name || "person") + " profile"}
+    style={{
+      background: COLORS.bgInput,
+      border: `1px solid ${COLORS.border}`,
+      borderRadius: 10,
+      padding: 12,
+      minWidth: 145,
+      maxWidth: 165,
+      cursor: "pointer",
+      transition: "transform 0.2s, border-color 0.2s"
+    }}
+    onMouseEnter={(e) => {
+      e.currentTarget.style.transform = "translateY(-2px)";
+      e.currentTarget.style.borderColor = COLORS.green3;
+    }}
+    onMouseLeave={(e) => {
+      e.currentTarget.style.transform = "translateY(0)";
+      e.currentTarget.style.borderColor = COLORS.border;
+    }}
+  >
+    <img src={personPhoto(person)} alt={person?.name || "Person"} style={{ width: 52, height: 52, borderRadius: "50%", objectFit: "cover", marginBottom: 8, border: `1px solid ${COLORS.borderLight}` }} />
+    <div style={{ fontWeight: 700, fontSize: 13, color: COLORS.textPrimary, lineHeight: 1.25 }}>{person?.name || "Unknown"}</div>
+    <div style={{ color: COLORS.green4, fontSize: 11, marginTop: 3 }}>{credit}</div>
+    <div style={{ color: COLORS.textMuted, fontSize: 10, marginTop: 5 }}>View profile →</div>
+  </div>
+);
+
+const getDramaPeople = (drama, role, db = getDB()) => {
+  let ids = role === "Actor" ? drama.castIds : role === "Director" ? drama.directorIds : drama.writerIds;
+  let fallback = role === "Actor" ? drama.cast : role === "Director" ? String(drama.director || "").split(",") : String(drama.writer || "").split(",");
+  ids = Array.isArray(ids) ? ids : [];
+  const fromIds = ids.map(id => (db.people || []).find(p => p.id === id)).filter(Boolean);
+  if (fromIds.length) return fromIds;
+  return (fallback || []).map(n => { const name = String(n).trim(); return findPersonByName(db.people || [], name) || { id: name, name, roles: [role], photo: "" }; }).filter(p => p.name);
+};
+
+// ─── DRAMA POSTER CARD ─────────────────────────────────────────────────────────
+const DramaCard = ({ drama, onOpen }) => {
+  const db = getDB();
+  const ratings = db.reviews.filter(r => r.dramaId === drama.id).map(r => r.rating);
+  const computedRating = ratings.length > 0 ? parseFloat(avg(ratings)) : drama.rating;
+  return (
+    <Card onClick={() => onOpen(drama)} style={{ width: 160, flexShrink: 0 }}>
+      <div style={{ position: "relative" }}>
+        <img src={drama.poster} alt={drama.title} style={{ width: "100%", height: 220, objectFit: "cover", display: "block" }} />
+        <div style={{ position: "absolute", top: 6, right: 6, background: "rgba(0,0,0,0.75)", borderRadius: 4, padding: "2px 7px", fontSize: 13, fontWeight: 700, color: COLORS.starFilled }}>
+          ★ {computedRating}
+        </div>
+        <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, background: "linear-gradient(transparent, rgba(0,0,0,0.9))", padding: "20px 8px 6px" }}>
+          <span className="badge" style={{ background: drama.status === "Completed" ? COLORS.green1 : drama.status === "Ongoing" ? "#c9a84c" : COLORS.bgPanel, color: "#fff", fontSize: 10 }}>{drama.status}</span>
+        </div>
+      </div>
+      <div style={{ padding: "8px 10px 10px" }}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: COLORS.textPrimary, lineHeight: 1.3, marginBottom: 2 }}>{drama.title}</div>
+        <div style={{ fontSize: 11, color: COLORS.textMuted }}>{drama.network} · {drama.year}</div>
+        <div style={{ fontSize: 11, color: COLORS.textSecondary, marginTop: 2 }}>{drama.episodes} eps</div>
+      </div>
+    </Card>
+  );
+};
+
+
+const MovieCard = ({ movie, onOpen }) => {
+  const computedRating = movie.rating || "N/A";
+  return (
+    <Card onClick={() => onOpen(movie)} style={{ width: 160, flexShrink: 0 }}>
+      <div style={{ position: "relative" }}>
+        <img src={movie.poster} alt={movie.title} style={{ width: "100%", height: 220, objectFit: "cover", display: "block" }} />
+        <div style={{ position: "absolute", top: 6, right: 6, background: "rgba(0,0,0,0.75)", borderRadius: 4, padding: "2px 7px", fontSize: 13, fontWeight: 700, color: COLORS.starFilled }}>
+          ★ {computedRating}
+        </div>
+        <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, background: "linear-gradient(transparent, rgba(0,0,0,0.9))", padding: "20px 8px 6px" }}>
+          <span className="badge" style={{ background: COLORS.gold, color: "#111", fontSize: 10 }}>Movie</span>
+        </div>
+      </div>
+      <div style={{ padding: "8px 10px 10px" }}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: COLORS.textPrimary, lineHeight: 1.3, marginBottom: 2 }}>{movie.title}</div>
+        <div style={{ fontSize: 11, color: COLORS.textMuted }}>{movie.year}</div>
+        <div style={{ fontSize: 11, color: COLORS.textSecondary, marginTop: 2 }}>{movie.status}</div>
+      </div>
+    </Card>
+  );
+};
+
+const MoviePage = ({ movie, setPage }) => {
+  const db = getDB();
+  if (!movie) return <div style={{ padding: 40, textAlign: "center" }}>Movie not found.</div>;
+  const related = (db.movies || []).filter(m => m.id !== movie.id && m.genres.some(g => movie.genres.includes(g))).slice(0, 4);
+  return (
+    <div className="fade-in">
+      <div style={{ position: "relative", minHeight: 340, overflow: "hidden", borderBottom: `1px solid ${COLORS.border}`, marginBottom: 28 }}>
+        <img src={movie.poster} alt={movie.title} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", filter: "blur(6px) brightness(0.28)", transform: "scale(1.05)" }} />
+        <div style={{ position: "absolute", inset: 0, background: `linear-gradient(90deg, ${COLORS.bg} 0%, rgba(15,26,15,0.75) 55%, rgba(15,26,15,0.35) 100%)` }} />
+        <div style={{ position: "relative", maxWidth: 1150, margin: "0 auto", padding: "34px 20px", display: "flex", gap: 28, alignItems: "center" }}>
+          <img src={movie.poster} alt={movie.title} style={{ width: 190, height: 270, objectFit: "cover", borderRadius: 12, boxShadow: "0 12px 45px rgba(0,0,0,0.65)", border: `2px solid ${COLORS.gold}` }} />
+          <div style={{ flex: 1 }}>
+            <button onClick={() => setPage("movies")} style={{ background: "transparent", border: "none", color: COLORS.green3, fontSize: 13, marginBottom: 14, cursor: "pointer" }}>← Back to Movies</button>
+            <h1 style={{ fontFamily: "Cinzel", fontSize: 38, color: "#fff", marginBottom: 4 }}>{movie.title}</h1>
+            <div style={{ fontFamily: "Noto Nastaliq Urdu", fontSize: 24, color: COLORS.green4, marginBottom: 12, direction: "rtl", textAlign: "left" }}>{movie.urduTitle}</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
+              <span className="badge" style={{ background: COLORS.gold, color: "#111" }}>Movie</span>
+              <span className="badge" style={{ background: COLORS.bgPanel, color: COLORS.textSecondary, border: `1px solid ${COLORS.border}` }}>{movie.year}</span>
+              <span className="badge" style={{ background: COLORS.bgPanel, color: COLORS.textSecondary, border: `1px solid ${COLORS.border}` }}>{movie.status}</span>
+            </div>
+            <p style={{ color: COLORS.textSecondary, lineHeight: 1.75, maxWidth: 720, marginBottom: 18 }}>{movie.synopsis}</p>
+            <div style={{ color: COLORS.starFilled, fontSize: 30, fontWeight: 700 }}>★ {movie.rating}</div>
+          </div>
+        </div>
+      </div>
+      <div style={{ maxWidth: 1150, margin: "0 auto", padding: "0 20px 40px", display: "grid", gridTemplateColumns: "minmax(0, 2fr) 330px", gap: 24 }}>
+        <div>
+          <Card style={{ padding: 20, marginBottom: 20 }}>
+            <h2 style={{ fontFamily: "Cinzel", fontSize: 20, color: COLORS.green3, marginBottom: 12 }}>Details</h2>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 14, marginBottom: 14, fontSize: 14 }}>
+              <div><strong style={{ color: COLORS.green4 }}>Director:</strong><br /><span style={{ color: COLORS.textSecondary }}>{movie.director}</span></div>
+              <div><strong style={{ color: COLORS.green4 }}>Writer:</strong><br /><span style={{ color: COLORS.textSecondary }}>{movie.writer}</span></div>
+              <div><strong style={{ color: COLORS.green4 }}>Views:</strong><br /><span style={{ color: COLORS.textSecondary }}>{fmtNum(movie.views)}</span></div>
+            </div>
+            <div><strong style={{ color: COLORS.green4, fontSize: 13 }}>Genres: </strong>{movie.genres.map(g => <span key={g} className="tag">{g}</span>)}</div>
+          </Card>
+          <Card style={{ padding: 20 }}>
+            <h2 style={{ fontFamily: "Cinzel", fontSize: 20, color: COLORS.green3, marginBottom: 12 }}>Cast</h2>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
+              {(movie.cast || []).map(name => {
+                const person = findPersonByName(db.people || [], name) || { name, roles: ["Actor"], photo: "" };
+                return <PeopleMiniCard key={name} person={person} credit="Actor" />;
+              })}
+            </div>
+          </Card>
+        </div>
+        <aside>
+          <Card style={{ padding: 18 }}>
+            <h3 style={{ fontFamily: "Cinzel", fontSize: 16, color: COLORS.green3, marginBottom: 12 }}>Related Movies</h3>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>{related.map(m => <div key={m.id} onClick={() => openMoviePage(m)} style={{ display: "flex", gap: 10, cursor: "pointer", paddingBottom: 10, borderBottom: `1px solid ${COLORS.border}` }}><img src={m.poster} alt={m.title} style={{ width: 45, height: 64, objectFit: "cover", borderRadius: 4 }} /><div><div style={{ fontSize: 13, fontWeight: 700, color: COLORS.textPrimary }}>{m.title}</div><div style={{ fontSize: 11, color: COLORS.textMuted }}>{m.year} · ★ {m.rating}</div></div></div>)}</div>
+          </Card>
+        </aside>
+      </div>
+    </div>
+  );
+};
+
+const MoviesPage = () => {
+  const db = getDB();
+  const [search, setSearch] = useState("");
+  const [genre, setGenre] = useState("");
+  const [sortBy, setSortBy] = useState("rating");
+  let movies = [...(db.movies || [])]
+    .filter(m => !search || m.title.toLowerCase().includes(search.toLowerCase()))
+    .filter(m => !genre || m.genres.includes(genre));
+  if (sortBy === "rating") movies.sort((a,b) => b.rating - a.rating);
+  if (sortBy === "year") movies.sort((a,b) => b.year - a.year);
+  if (sortBy === "title") movies.sort((a,b) => a.title.localeCompare(b.title));
+  return (
+    <div className="fade-in" style={{ maxWidth: 1200, margin: "0 auto", padding: "28px 20px" }}>
+      <h1 style={{ fontFamily: "Cinzel", fontSize: 26, color: COLORS.textPrimary, marginBottom: 20 }}>Pakistani Movies</h1>
+      <Card style={{ padding: 16, marginBottom: 24 }}>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "flex-end" }}>
+          <div style={{ flex: "1 1 220px" }}><div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 4 }}>Search</div><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search movies..." style={{ width: "100%", background: COLORS.bgInput, border: `1px solid ${COLORS.border}`, borderRadius: 6, color: COLORS.textPrimary, padding: "7px 12px", fontSize: 13 }} /></div>
+          <div style={{ flex: "1 1 150px" }}><div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 4 }}>Genre</div><select value={genre} onChange={e => setGenre(e.target.value)} style={{ width: "100%", background: COLORS.bgInput, border: `1px solid ${COLORS.border}`, borderRadius: 6, color: COLORS.textPrimary, padding: "7px 10px", fontSize: 13 }}><option value="">All</option>{GENRES.map(g => <option key={g} value={g}>{g}</option>)}</select></div>
+          <div style={{ flex: "1 1 150px" }}><div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 4 }}>Sort</div><select value={sortBy} onChange={e => setSortBy(e.target.value)} style={{ width: "100%", background: COLORS.bgInput, border: `1px solid ${COLORS.border}`, borderRadius: 6, color: COLORS.textPrimary, padding: "7px 10px", fontSize: 13 }}><option value="rating">Rating</option><option value="year">Year</option><option value="title">Title</option></select></div>
+        </div>
+      </Card>
+      <div style={{ color: COLORS.textMuted, fontSize: 13, marginBottom: 16 }}>{movies.length} movie{movies.length !== 1 ? "s" : ""} found</div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 16 }}>
+        {movies.map(m => <MovieCard key={m.id} movie={m} onOpen={openMoviePage} />)}
+      </div>
+    </div>
+  );
+};
+
+
+// ─── DRAMA DETAIL MODAL ────────────────────────────────────────────────────────
+const DramaModal = ({ drama, onClose }) => {
+  const { user, updateUser } = useAuth();
+  const [tab, setTab] = useState("overview");
+  const [rating, setRating] = useState(0);
+  const [review, setReview] = useState("");
+  const [watchStatus, setWatchStatus] = useState("none");
+  const db = getDB();
+
+  useEffect(() => {
+    if (user) {
+      const saved = user.ratings?.[drama.id];
+      if (saved) setRating(saved);
+      const wl = user.watchlist?.find(w => w.dramaId === drama.id);
+      if (wl) setWatchStatus(wl.status);
+    }
+  }, [drama.id, user]);
+
+  const reviews = db.reviews.filter(r => r.dramaId === drama.id);
+  const avgRating = reviews.length > 0 ? avg(reviews.map(r => r.rating)) : drama.rating;
+
+  const handleRate = (val) => {
+    if (!user) return alert("Please login to rate!");
+    setRating(val);
+    const db2 = getDB();
+    const u = db2.users.find(u => u.id === user.id);
+    if (u) { u.ratings = { ...u.ratings, [drama.id]: val }; saveDB(db2); updateUser(u); }
+  };
+
+  const handleReview = () => {
+    if (!user) return alert("Please login!");
+    if (!rating) return alert("Please give a rating first.");
+    if (!review.trim()) return alert("Please write a review.");
+    const db2 = getDB();
+    const existing = db2.reviews.findIndex(r => r.dramaId === drama.id && r.userId === user.id);
+    const rev = { id: genId(), dramaId: drama.id, userId: user.id, username: user.username, rating, text: review.trim(), date: new Date().toISOString().slice(0, 10), likes: 0 };
+    if (existing > -1) db2.reviews[existing] = rev; else db2.reviews.push(rev);
+    saveDB(db2);
+    setReview("");
+    alert("Review submitted!");
+  };
+
+  const handleWatchStatus = (status) => {
+    if (!user) return alert("Please login!");
+    setWatchStatus(status);
+    const db2 = getDB();
+    const u = db2.users.find(u => u.id === user.id);
+    if (!u) return;
+    u.watchlist = u.watchlist || [];
+    const idx = u.watchlist.findIndex(w => w.dramaId === drama.id);
+    if (status === "none") { if (idx > -1) u.watchlist.splice(idx, 1); }
+    else { const entry = { dramaId: drama.id, status, addedAt: Date.now() }; if (idx > -1) u.watchlist[idx] = entry; else u.watchlist.push(entry); }
+    saveDB(db2); updateUser(u);
+  };
+
+  const WATCH_STATUSES = [
+    { key: "none", label: "— Not in List", icon: "○" },
+    { key: "watching", label: "Currently Watching", icon: "▶" },
+    { key: "completed", label: "Completed", icon: "✓" },
+    { key: "plan_to_watch", label: "Plan to Watch", icon: "☆" },
+    { key: "on_hold", label: "On Hold", icon: "⏸" },
+    { key: "dropped", label: "Dropped", icon: "✗" },
+  ];
+
+  const tabs = ["overview", "cast & crew", "reviews", "episodes", "comments"];
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-box fade-in" style={{ maxWidth: 760 }} onClick={e => e.stopPropagation()}>
+        <div style={{ display: "flex", gap: 20, marginBottom: 20 }}>
+          <img src={drama.poster} alt={drama.title} style={{ width: 140, height: 200, objectFit: "cover", borderRadius: 8, flexShrink: 0 }} />
+          <div style={{ flex: 1 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+              <div>
+                <h2 style={{ fontFamily: "Cinzel", color: COLORS.textPrimary, fontSize: 22, marginBottom: 2 }}>{drama.title}</h2>
+                <div style={{ fontFamily: "Noto Nastaliq Urdu", fontSize: 18, color: COLORS.green4, marginBottom: 8, direction: "rtl" }}>{drama.urduTitle}</div>
+              </div>
+              <button onClick={onClose} style={{ background: "none", border: "none", color: COLORS.textMuted, fontSize: 22, cursor: "pointer", padding: "0 4px" }}>✕</button>
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
+              <span className="badge" style={{ background: COLORS.green1, color: "#fff" }}>{drama.status}</span>
+              <span className="badge" style={{ background: COLORS.bgPanel, color: COLORS.textSecondary, border: `1px solid ${COLORS.border}` }}>{drama.network}</span>
+              <span className="badge" style={{ background: COLORS.bgPanel, color: COLORS.textSecondary, border: `1px solid ${COLORS.border}` }}>{drama.year}</span>
+              <span className="badge" style={{ background: COLORS.bgPanel, color: COLORS.textSecondary, border: `1px solid ${COLORS.border}` }}>{drama.episodes} Episodes</span>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
+              <div style={{ textAlign: "center" }}>
+                <div style={{ fontSize: 28, fontWeight: 700, color: COLORS.starFilled }}>★ {avgRating}</div>
+                <div style={{ fontSize: 11, color: COLORS.textMuted }}>{fmtNum(drama.ratingCount + reviews.length)} ratings</div>
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 12, color: COLORS.textSecondary, marginBottom: 4 }}>Your Rating:</div>
+                <StarRow value={rating} onChange={handleRate} size={20} />
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <select value={watchStatus} onChange={e => handleWatchStatus(e.target.value)}
+                style={{ background: COLORS.bgInput, border: `1px solid ${COLORS.border}`, borderRadius: 6, color: COLORS.textPrimary, padding: "6px 10px", fontSize: 13 }}>
+                {WATCH_STATUSES.map(s => <option key={s.key} value={s.key}>{s.icon} {s.label}</option>)}
+              </select>
+            </div>
+          </div>
+        </div>
+
+        {/* Tabs */}
+        <div style={{ display: "flex", borderBottom: `1px solid ${COLORS.border}`, marginBottom: 16, gap: 0 }}>
+          {tabs.map(t => (
+            <button key={t} onClick={() => setTab(t)} style={{ background: "none", border: "none", borderBottom: tab === t ? `2px solid ${COLORS.green3}` : "2px solid transparent", color: tab === t ? COLORS.green3 : COLORS.textMuted, padding: "8px 16px", fontSize: 13, fontWeight: 600, textTransform: "capitalize", cursor: "pointer", transition: "color 0.2s" }}>{t}</button>
+          ))}
+        </div>
+
+        {tab === "overview" && (
+          <div className="fade-in">
+            <p style={{ color: COLORS.textSecondary, lineHeight: 1.7, marginBottom: 12, fontSize: 14 }}>{drama.synopsis}</p>
+            <div style={{ display: "flex", gap: 24, fontSize: 13, color: COLORS.textSecondary, marginBottom: 12 }}>
+              <div><strong style={{ color: COLORS.green4 }}>Director:</strong> {getDramaPeople(drama, "Director", db).map(p => p.name).join(", ")}</div>
+              <div><strong style={{ color: COLORS.green4 }}>Writer:</strong> {getDramaPeople(drama, "Writer", db).map(p => p.name).join(", ")}</div>
+            </div>
+            <div style={{ marginBottom: 12 }}>
+              <strong style={{ color: COLORS.green4, fontSize: 13 }}>Genres: </strong>
+              {drama.genres.map(g => <span key={g} className="tag">{g}</span>)}
+            </div>
+            <div>
+              <strong style={{ color: COLORS.green4, fontSize: 13 }}>Tags: </strong>
+              {drama.tags?.map(t => <span key={t} className="tag">#{t}</span>)}
+            </div>
+          </div>
+        )}
+
+        {tab === "cast & crew" && (
+          <div className="fade-in">
+            <h4 style={{ color: COLORS.green4, marginBottom: 12, fontSize: 14 }}>Main Cast</h4>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+              {getDramaPeople(drama, "Actor", db).map((p) => <PeopleMiniCard key={p.id || p.name} person={p} credit="Actor" />)}
+            </div>
+            <h4 style={{ color: COLORS.green4, marginTop: 16, marginBottom: 8, fontSize: 14 }}>Crew</h4>
+            <div style={{ fontSize: 13, color: COLORS.textSecondary }}>
+              <div style={{ marginBottom: 4 }}><strong style={{ color: COLORS.green4 }}>Director:</strong> {getDramaPeople(drama, "Director", db).map(p => p.name).join(", ")}</div>
+              <div><strong style={{ color: COLORS.green4 }}>Writer:</strong> {getDramaPeople(drama, "Writer", db).map(p => p.name).join(", ")}</div>
+            </div>
+          </div>
+        )}
+
+        {tab === "reviews" && (
+          <div className="fade-in">
+            {user && (
+              <div style={{ background: COLORS.bgInput, borderRadius: 8, padding: 14, marginBottom: 16, border: `1px solid ${COLORS.border}` }}>
+                <div style={{ fontSize: 13, color: COLORS.textSecondary, marginBottom: 8 }}>Write a Review</div>
+                <textarea value={review} onChange={e => setReview(e.target.value)} placeholder="Share your thoughts about this drama..." rows={3}
+                  style={{ width: "100%", background: COLORS.bgPanel, border: `1px solid ${COLORS.border}`, borderRadius: 6, color: COLORS.textPrimary, padding: "8px 12px", fontSize: 13, resize: "vertical", marginBottom: 8 }} />
+                <Btn size="sm" onClick={handleReview}>Submit Review</Btn>
+              </div>
+            )}
+            {reviews.length === 0 ? <div style={{ color: COLORS.textMuted, textAlign: "center", padding: 24 }}>No reviews yet. Be the first!</div> : reviews.map(r => (
+              <div key={r.id} style={{ borderBottom: `1px solid ${COLORS.border}`, paddingBottom: 12, marginBottom: 12 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+                  <div style={{ width: 32, height: 32, borderRadius: "50%", background: COLORS.green1, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 14 }}>{r.username[0].toUpperCase()}</div>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: COLORS.textPrimary }}>{r.username}</div>
+                    <div style={{ fontSize: 11, color: COLORS.textMuted }}>{r.date}</div>
+                  </div>
+                  <div style={{ marginLeft: "auto", color: COLORS.starFilled, fontSize: 13 }}>★ {r.rating}/10</div>
+                </div>
+                <p style={{ fontSize: 13, color: COLORS.textSecondary, lineHeight: 1.6 }}>{r.text}</p>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {tab === "episodes" && (
+          <div className="fade-in">
+            <Card style={{ padding: 18, textAlign: "center" }}>
+              <div style={{ fontSize: 12, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>Total Episodes</div>
+              <div style={{ fontFamily: "Cinzel", fontSize: 42, color: COLORS.green3, fontWeight: 700, lineHeight: 1 }}>{drama.episodes}</div>
+              <div style={{ fontSize: 13, color: COLORS.textSecondary, marginTop: 6 }}>{drama.title} has {drama.episodes} episode{drama.episodes === 1 ? "" : "s"}.</div>
+            </Card>
+          </div>
+        )}
+
+        {tab === "comments" && <CommentsSection dramaId={drama.id} />}
+      </div>
+    </div>
+  );
+};
+
+
+// ─── FULL DRAMA PAGE ──────────────────────────────────────────────────────────
+const DramaPage = ({ drama, setPage }) => {
+  const { user, updateUser } = useAuth();
+  const [rating, setRating] = useState(0);
+  const [review, setReview] = useState("");
+  const [watchStatus, setWatchStatus] = useState("none");
+  const db = getDB();
+
+  if (!drama) {
+    return (
+      <div className="fade-in" style={{ maxWidth: 900, margin: "0 auto", padding: "60px 20px", textAlign: "center" }}>
+        <div style={{ fontSize: 48, marginBottom: 12 }}>🎬</div>
+        <h1 style={{ fontFamily: "Cinzel", color: COLORS.textPrimary, marginBottom: 8 }}>Drama not found</h1>
+        <p style={{ color: COLORS.textMuted, marginBottom: 20 }}>This drama page does not exist yet.</p>
+        <Btn onClick={() => setPage("dramas")}>Browse Dramas</Btn>
+      </div>
+    );
+  }
+
+  useEffect(() => {
+    if (user) {
+      const saved = user.ratings?.[drama.id];
+      setRating(saved || 0);
+      const wl = user.watchlist?.find(w => w.dramaId === drama.id);
+      setWatchStatus(wl ? wl.status : "none");
+    }
+    document.title = drama.title + " - PakDramaList";
+    return () => { document.title = "PakDramaList"; };
+  }, [drama.id, user]);
+
+  const reviews = db.reviews.filter(r => r.dramaId === drama.id);
+  const avgRating = reviews.length > 0 ? avg(reviews.map(r => r.rating)) : drama.rating;
+  const related = db.dramas.filter(d => d.id !== drama.id && d.genres.some(g => drama.genres.includes(g))).slice(0, 6);
+
+  const handleRate = (val) => {
+    if (!user) return alert("Please login to rate!");
+    setRating(val);
+    const db2 = getDB();
+    const u = db2.users.find(u => u.id === user.id);
+    if (u) { u.ratings = { ...u.ratings, [drama.id]: val }; saveDB(db2); updateUser(u); }
+  };
+
+  const handleReview = () => {
+    if (!user) return alert("Please login!");
+    if (!rating) return alert("Please give a rating first.");
+    if (!review.trim()) return alert("Please write a review.");
+    const db2 = getDB();
+    const existing = db2.reviews.findIndex(r => r.dramaId === drama.id && r.userId === user.id);
+    const rev = { id: genId(), dramaId: drama.id, userId: user.id, username: user.username, rating, text: review.trim(), date: new Date().toISOString().slice(0, 10), likes: 0 };
+    if (existing > -1) db2.reviews[existing] = rev; else db2.reviews.push(rev);
+    saveDB(db2);
+    setReview("");
+    alert("Review submitted!");
+  };
+
+  const handleWatchStatus = (status) => {
+    if (!user) return alert("Please login!");
+    setWatchStatus(status);
+    const db2 = getDB();
+    const u = db2.users.find(u => u.id === user.id);
+    if (!u) return;
+    u.watchlist = u.watchlist || [];
+    const idx = u.watchlist.findIndex(w => w.dramaId === drama.id);
+    if (status === "none") { if (idx > -1) u.watchlist.splice(idx, 1); }
+    else { const entry = { dramaId: drama.id, status, addedAt: Date.now() }; if (idx > -1) u.watchlist[idx] = entry; else u.watchlist.push(entry); }
+    saveDB(db2); updateUser(u);
+  };
+
+  const WATCH_STATUSES = [
+    { key: "none", label: "— Not in List", icon: "○" },
+    { key: "watching", label: "Currently Watching", icon: "▶" },
+    { key: "completed", label: "Completed", icon: "✓" },
+    { key: "plan_to_watch", label: "Plan to Watch", icon: "☆" },
+    { key: "on_hold", label: "On Hold", icon: "⏸" },
+    { key: "dropped", label: "Dropped", icon: "✗" },
+  ];
+
+  return (
+    <div className="fade-in">
+      <div style={{ position: "relative", minHeight: 360, overflow: "hidden", borderBottom: `1px solid ${COLORS.border}`, marginBottom: 28 }}>
+        <img src={drama.poster} alt={drama.title} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", filter: "blur(6px) brightness(0.28)", transform: "scale(1.05)" }} />
+        <div style={{ position: "absolute", inset: 0, background: `linear-gradient(90deg, ${COLORS.bg} 0%, rgba(15,26,15,0.75) 55%, rgba(15,26,15,0.35) 100%)` }} />
+        <div style={{ position: "relative", maxWidth: 1150, margin: "0 auto", padding: "34px 20px", display: "flex", gap: 28, alignItems: "center" }}>
+          <img src={drama.poster} alt={drama.title} style={{ width: 190, height: 270, objectFit: "cover", borderRadius: 12, boxShadow: "0 12px 45px rgba(0,0,0,0.65)", border: `2px solid ${COLORS.green1}` }} />
+          <div style={{ flex: 1 }}>
+            <button onClick={() => setPage("dramas")} style={{ background: "transparent", border: "none", color: COLORS.green3, fontSize: 13, marginBottom: 14, cursor: "pointer" }}>← Back to Dramas</button>
+            <h1 style={{ fontFamily: "Cinzel", fontSize: 38, color: "#fff", marginBottom: 4 }}>{drama.title}</h1>
+            <div style={{ fontFamily: "Noto Nastaliq Urdu", fontSize: 24, color: COLORS.green4, marginBottom: 12, direction: "rtl", textAlign: "left" }}>{drama.urduTitle}</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
+              <span className="badge" style={{ background: COLORS.green1, color: "#fff" }}>{drama.status}</span>
+              <span className="badge" style={{ background: COLORS.bgPanel, color: COLORS.textSecondary, border: `1px solid ${COLORS.border}` }}>{drama.network}</span>
+              <span className="badge" style={{ background: COLORS.bgPanel, color: COLORS.textSecondary, border: `1px solid ${COLORS.border}` }}>{drama.year}</span>
+              <span className="badge" style={{ background: COLORS.bgPanel, color: COLORS.textSecondary, border: `1px solid ${COLORS.border}` }}>{drama.episodes} Episodes</span>
+            </div>
+            <p style={{ color: COLORS.textSecondary, lineHeight: 1.75, maxWidth: 720, marginBottom: 18 }}>{drama.synopsis}</p>
+            <div style={{ display: "flex", gap: 22, flexWrap: "wrap", alignItems: "center" }}>
+              <div><div style={{ color: COLORS.starFilled, fontSize: 30, fontWeight: 700 }}>★ {avgRating}</div><div style={{ fontSize: 12, color: COLORS.textMuted }}>{fmtNum(drama.ratingCount + reviews.length)} ratings</div></div>
+              <div><div style={{ fontSize: 12, color: COLORS.textSecondary, marginBottom: 4 }}>Your Rating</div><StarRow value={rating} onChange={handleRate} size={21} /></div>
+              <select value={watchStatus} onChange={e => handleWatchStatus(e.target.value)} style={{ background: COLORS.bgInput, border: `1px solid ${COLORS.border}`, borderRadius: 7, color: COLORS.textPrimary, padding: "9px 12px", fontSize: 13 }}>
+                {WATCH_STATUSES.map(s => <option key={s.key} value={s.key}>{s.icon} {s.label}</option>)}
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style={{ maxWidth: 1150, margin: "0 auto", padding: "0 20px 40px", display: "grid", gridTemplateColumns: "minmax(0, 2fr) 330px", gap: 24 }}>
+        <div>
+          <Card style={{ padding: 20, marginBottom: 20 }}>
+            <h2 style={{ fontFamily: "Cinzel", fontSize: 20, color: COLORS.green3, marginBottom: 12 }}>Details</h2>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 14, marginBottom: 14, fontSize: 14 }}>
+              <div><strong style={{ color: COLORS.green4 }}>Director:</strong><br /><span style={{ color: COLORS.textSecondary }}>{getDramaPeople(drama, "Director", db).map(p => p.name).join(", ")}</span></div>
+              <div><strong style={{ color: COLORS.green4 }}>Writer:</strong><br /><span style={{ color: COLORS.textSecondary }}>{getDramaPeople(drama, "Writer", db).map(p => p.name).join(", ")}</span></div>
+              <div><strong style={{ color: COLORS.green4 }}>Network:</strong><br /><span style={{ color: COLORS.textSecondary }}>{drama.network}</span></div>
+              <div><strong style={{ color: COLORS.green4 }}>Views:</strong><br /><span style={{ color: COLORS.textSecondary }}>{fmtNum(drama.views)}</span></div>
+            </div>
+            <div style={{ marginBottom: 10 }}><strong style={{ color: COLORS.green4, fontSize: 13 }}>Genres: </strong>{drama.genres.map(g => <span key={g} className="tag">{g}</span>)}</div>
+            <div><strong style={{ color: COLORS.green4, fontSize: 13 }}>Tags: </strong>{drama.tags?.map(t => <span key={t} className="tag">#{t}</span>)}</div>
+          </Card>
+
+          <Card style={{ padding: 20, marginBottom: 20 }}>
+            <h2 style={{ fontFamily: "Cinzel", fontSize: 20, color: COLORS.green3, marginBottom: 12 }}>Cast & Crew</h2>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
+              {[...getDramaPeople(drama, "Actor", db).map(p => ({ p, credit: "Actor" })), ...getDramaPeople(drama, "Director", db).map(p => ({ p, credit: "Director" })), ...getDramaPeople(drama, "Writer", db).map(p => ({ p, credit: "Writer" }))].map(({ p, credit }) => <PeopleMiniCard key={credit + (p.id || p.name)} person={p} credit={credit} />)}
+            </div>
+          </Card>
+
+          <Card style={{ padding: 20, marginBottom: 20 }}>
+            <h2 style={{ fontFamily: "Cinzel", fontSize: 20, color: COLORS.green3, marginBottom: 12 }}>Reviews</h2>
+            {user && <div style={{ background: COLORS.bgInput, borderRadius: 8, padding: 14, marginBottom: 16, border: `1px solid ${COLORS.border}` }}><textarea value={review} onChange={e => setReview(e.target.value)} placeholder="Share your thoughts about this drama..." rows={3} style={{ width: "100%", background: COLORS.bgPanel, border: `1px solid ${COLORS.border}`, borderRadius: 6, color: COLORS.textPrimary, padding: "8px 12px", fontSize: 13, resize: "vertical", marginBottom: 8 }} /><Btn size="sm" onClick={handleReview}>Submit Review</Btn></div>}
+            {reviews.length === 0 ? <div style={{ color: COLORS.textMuted, textAlign: "center", padding: 20 }}>No reviews yet. Be the first!</div> : reviews.map(r => <div key={r.id} style={{ borderBottom: `1px solid ${COLORS.border}`, paddingBottom: 12, marginBottom: 12 }}><div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}><div style={{ width: 32, height: 32, borderRadius: "50%", background: COLORS.green1, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 14 }}>{r.username[0].toUpperCase()}</div><div><div style={{ fontSize: 13, fontWeight: 600 }}>{r.username}</div><div style={{ fontSize: 11, color: COLORS.textMuted }}>{r.date}</div></div><div style={{ marginLeft: "auto", color: COLORS.starFilled, fontSize: 13 }}>★ {r.rating}/10</div></div><p style={{ fontSize: 13, color: COLORS.textSecondary, lineHeight: 1.6 }}>{r.text}</p></div>)}
+          </Card>
+
+          <Card style={{ padding: 20 }}>
+            <h2 style={{ fontFamily: "Cinzel", fontSize: 20, color: COLORS.green3, marginBottom: 12 }}>Discussion</h2>
+            <CommentsSection dramaId={drama.id} />
+          </Card>
+        </div>
+        <aside>
+          <Card style={{ padding: 18, marginBottom: 18, textAlign: "center" }}>
+            <h3 style={{ fontFamily: "Cinzel", fontSize: 16, color: COLORS.green3, marginBottom: 10 }}>Episodes</h3>
+            <div style={{ fontFamily: "Cinzel", fontSize: 46, fontWeight: 700, color: COLORS.green3, lineHeight: 1 }}>{drama.episodes}</div>
+            <div style={{ fontSize: 13, color: COLORS.textSecondary, marginTop: 8 }}>Total Episodes</div>
+          </Card>
+          <Card style={{ padding: 18 }}>
+            <h3 style={{ fontFamily: "Cinzel", fontSize: 16, color: COLORS.green3, marginBottom: 12 }}>Related Dramas</h3>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>{related.map(d => <div key={d.id} onClick={() => openDramaPage(d)} style={{ display: "flex", gap: 10, cursor: "pointer", paddingBottom: 10, borderBottom: `1px solid ${COLORS.border}` }}><img src={d.poster} alt={d.title} style={{ width: 45, height: 64, objectFit: "cover", borderRadius: 4 }} /><div><div style={{ fontSize: 13, fontWeight: 700, color: COLORS.textPrimary }}>{d.title}</div><div style={{ fontSize: 11, color: COLORS.textMuted }}>{d.year} · ★ {d.rating}</div></div></div>)}</div>
+          </Card>
+        </aside>
+      </div>
+    </div>
+  );
+};
+
+// ─── COMMENTS SECTION ─────────────────────────────────────────────────────────
+const CommentsSection = ({ dramaId }) => {
+  const { user } = useAuth();
+  const [text, setText] = useState("");
+  const [replyTo, setReplyTo] = useState(null); // { id, username }
+  const [replyText, setReplyText] = useState("");
+  const [comments, setComments] = useState([]);
+  const [sortBy, setSortBy] = useState("newest");
+
+  const loadComments = () => {
+    const db = getDB();
+    setComments((db.comments || []).filter(c => c.dramaId === dramaId));
+  };
+
+  useEffect(() => { loadComments(); }, [dramaId]);
+
+  const postComment = () => {
+    if (!user) return alert("Please login to comment!");
+    if (!text.trim()) return;
+    const db2 = getDB();
+    if (!db2.comments) db2.comments = [];
+    db2.comments.push({
+      id: genId(), dramaId, userId: user.id, username: user.username,
+      text: text.trim(), date: new Date().toISOString(), likes: [],
+      parentId: null, edited: false,
+    });
+    saveDB(db2);
+    setText("");
+    loadComments();
+  };
+
+  const postReply = (parentId) => {
+    if (!user) return alert("Please login!");
+    if (!replyText.trim()) return;
+    const db2 = getDB();
+    if (!db2.comments) db2.comments = [];
+    db2.comments.push({
+      id: genId(), dramaId, userId: user.id, username: user.username,
+      text: replyText.trim(), date: new Date().toISOString(), likes: [],
+      parentId, edited: false,
+    });
+    saveDB(db2);
+    setReplyText("");
+    setReplyTo(null);
+    loadComments();
+  };
+
+  const toggleLike = (commentId) => {
+    if (!user) return alert("Please login to like!");
+    const db2 = getDB();
+    const c = db2.comments.find(c => c.id === commentId);
+    if (!c) return;
+    const idx = c.likes.indexOf(user.id);
+    if (idx > -1) c.likes.splice(idx, 1);
+    else c.likes.push(user.id);
+    saveDB(db2);
+    loadComments();
+  };
+
+  const deleteComment = (commentId) => {
+    if (!window.confirm("Delete this comment?")) return;
+    const db2 = getDB();
+    // Also delete all replies to this comment
+    db2.comments = (db2.comments || []).filter(c => c.id !== commentId && c.parentId !== commentId);
+    saveDB(db2);
+    loadComments();
+  };
+
+  const fmtDate = (iso) => {
+    const d = new Date(iso);
+    const diff = (Date.now() - d.getTime()) / 1000;
+    if (diff < 60) return "just now";
+    if (diff < 3600) return Math.floor(diff / 60) + "m ago";
+    if (diff < 86400) return Math.floor(diff / 3600) + "h ago";
+    return d.toLocaleDateString("en-PK", { day: "numeric", month: "short", year: "numeric" });
+  };
+
+  const topLevel = comments.filter(c => !c.parentId);
+  const getReplies = (parentId) => comments.filter(c => c.parentId === parentId);
+
+  const sorted = [...topLevel].sort((a, b) => {
+    if (sortBy === "newest") return new Date(b.date) - new Date(a.date);
+    if (sortBy === "oldest") return new Date(a.date) - new Date(b.date);
+    if (sortBy === "popular") return b.likes.length - a.likes.length;
+    return 0;
+  });
+
+  const canDelete = (c) => user && (user.id === c.userId || ["admin", "moderator"].includes(user.role));
+
+  const CommentBubble = ({ c, isReply = false }) => {
+    const replies = getReplies(c.id);
+    const liked = user && c.likes.includes(user.id);
+    return (
+      <div style={{ display: "flex", gap: 10, marginBottom: isReply ? 10 : 14 }}>
+        <div style={{ flexShrink: 0, width: isReply ? 28 : 34, height: isReply ? 28 : 34, borderRadius: "50%", background: isReply ? COLORS.bgPanel : COLORS.green1, border: `1px solid ${COLORS.borderLight}`, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: isReply ? 12 : 14, color: COLORS.textPrimary }}>
+          {c.username[0].toUpperCase()}
+        </div>
+        <div style={{ flex: 1 }}>
+          <div style={{ background: COLORS.bgInput, border: `1px solid ${COLORS.border}`, borderRadius: isReply ? "0 10px 10px 10px" : "0 12px 12px 12px", padding: "10px 14px", marginBottom: 4 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5 }}>
+              <span style={{ fontSize: 13, fontWeight: 700, color: COLORS.green3 }}>{c.username}</span>
+              {c.userId === getDB().users.find(u => u.role === "admin")?.id && (
+                <span className="badge" style={{ background: COLORS.gold, color: "#111", fontSize: 9 }}>ADMIN</span>
+              )}
+              <span style={{ fontSize: 11, color: COLORS.textMuted }}>{fmtDate(c.date)}</span>
+              {c.edited && <span style={{ fontSize: 10, color: COLORS.textMuted, fontStyle: "italic" }}>(edited)</span>}
+            </div>
+            <p style={{ fontSize: 13, color: COLORS.textSecondary, lineHeight: 1.65, wordBreak: "break-word" }}>{c.text}</p>
+          </div>
+          {/* Action row */}
+          <div style={{ display: "flex", gap: 14, alignItems: "center", paddingLeft: 4 }}>
+            <button onClick={() => toggleLike(c.id)} style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 4, color: liked ? COLORS.green3 : COLORS.textMuted, fontSize: 12, transition: "color 0.2s" }}>
+              <span style={{ fontSize: 14 }}>{liked ? "♥" : "♡"}</span>
+              <span>{c.likes.length > 0 ? c.likes.length : ""}</span>
+            </button>
+            {!isReply && (
+              <button onClick={() => setReplyTo(replyTo?.id === c.id ? null : { id: c.id, username: c.username })} style={{ background: "none", border: "none", cursor: "pointer", color: replyTo?.id === c.id ? COLORS.green3 : COLORS.textMuted, fontSize: 12, display: "flex", alignItems: "center", gap: 4 }}>
+                💬 Reply {replies.length > 0 && `(${replies.length})`}
+              </button>
+            )}
+            {canDelete(c) && (
+              <button onClick={() => deleteComment(c.id)} style={{ background: "none", border: "none", cursor: "pointer", color: COLORS.textMuted, fontSize: 12 }}>🗑️ Delete</button>
+            )}
+          </div>
+
+          {/* Reply input */}
+          {replyTo?.id === c.id && (
+            <div className="slide-in" style={{ marginTop: 8, display: "flex", gap: 8, alignItems: "flex-end" }}>
+              <div style={{ flex: 1, background: COLORS.bgPanel, border: `1px solid ${COLORS.borderLight}`, borderRadius: 8, padding: "8px 12px" }}>
+                <div style={{ fontSize: 11, color: COLORS.green4, marginBottom: 4 }}>Replying to @{replyTo.username}</div>
+                <textarea value={replyText} onChange={e => setReplyText(e.target.value)} placeholder="Write a reply..." rows={2}
+                  style={{ width: "100%", background: "transparent", border: "none", outline: "none", color: COLORS.textPrimary, fontSize: 13, resize: "none" }}
+                  onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); postReply(c.id); } }} />
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                <Btn size="sm" onClick={() => postReply(c.id)}>Send</Btn>
+                <Btn size="sm" variant="ghost" onClick={() => { setReplyTo(null); setReplyText(""); }}>✕</Btn>
+              </div>
+            </div>
+          )}
+
+          {/* Nested replies */}
+          {replies.length > 0 && (
+            <div style={{ marginTop: 10, paddingLeft: 12, borderLeft: `2px solid ${COLORS.border}` }}>
+              {replies.map(r => <CommentBubble key={r.id} c={r} isReply />)}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="fade-in">
+      {/* Header */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+        <div style={{ fontSize: 14, color: COLORS.green4, fontWeight: 700 }}>
+          💬 Discussion ({topLevel.length} comment{topLevel.length !== 1 ? "s" : ""})
+        </div>
+        <select value={sortBy} onChange={e => setSortBy(e.target.value)}
+          style={{ background: COLORS.bgInput, border: `1px solid ${COLORS.border}`, borderRadius: 6, color: COLORS.textSecondary, padding: "4px 10px", fontSize: 12 }}>
+          <option value="newest">Newest First</option>
+          <option value="oldest">Oldest First</option>
+          <option value="popular">Most Liked</option>
+        </select>
+      </div>
+
+      {/* Write comment box */}
+      {user ? (
+        <div style={{ display: "flex", gap: 10, marginBottom: 20 }}>
+          <div style={{ width: 34, height: 34, borderRadius: "50%", background: COLORS.green1, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, flexShrink: 0 }}>
+            {user.avatar}
+          </div>
+          <div style={{ flex: 1, background: COLORS.bgInput, border: `1px solid ${COLORS.borderLight}`, borderRadius: 12, padding: "10px 14px" }}>
+            <textarea value={text} onChange={e => setText(e.target.value)} placeholder="Share your thoughts, favourite moments, or ask a question…" rows={2}
+              style={{ width: "100%", background: "transparent", border: "none", outline: "none", color: COLORS.textPrimary, fontSize: 13, resize: "none" }}
+              onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); postComment(); } }} />
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 6 }}>
+              <Btn size="sm" onClick={postComment} disabled={!text.trim()}>Post Comment</Btn>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div style={{ background: COLORS.bgInput, borderRadius: 10, padding: 14, marginBottom: 20, textAlign: "center", border: `1px solid ${COLORS.border}` }}>
+          <span style={{ fontSize: 13, color: COLORS.textMuted }}>Sign in to join the discussion</span>
+        </div>
+      )}
+
+      {/* Comments list */}
+      {sorted.length === 0 ? (
+        <div style={{ textAlign: "center", padding: "32px 0", color: COLORS.textMuted }}>
+          <div style={{ fontSize: 32, marginBottom: 8 }}>💬</div>
+          <div style={{ fontSize: 14 }}>No comments yet. Start the discussion!</div>
+        </div>
+      ) : (
+        sorted.map(c => <CommentBubble key={c.id} c={c} />)
+      )}
+    </div>
+  );
+};
+
+// ─── AUTH MODAL ───────────────────────────────────────────────────────────────
+const AuthModal = ({ onClose, onSuccess }) => {
+  const [mode, setMode] = useState("login");
+  const [form, setForm] = useState({ username: "", email: "", password: "", confirm: "" });
+  const [err, setErr] = useState("");
+
+  const handle = () => {
+    setErr("");
+    const db = getDB();
+    if (mode === "login") {
+      const u = db.users.find(u => (u.email === form.email || u.username === form.email) && u.password === form.password);
+      if (!u) return setErr("Invalid credentials.");
+      onSuccess(u);
+    } else {
+      if (!form.username || !form.email || !form.password) return setErr("All fields required.");
+      if (form.password !== form.confirm) return setErr("Passwords don't match.");
+      if (db.users.find(u => u.email === form.email)) return setErr("Email already registered.");
+      if (db.users.find(u => u.username === form.username)) return setErr("Username taken.");
+      const newUser = { id: genId(), username: form.username, email: form.email, password: form.password, role: "member", avatar: form.username[0].toUpperCase(), bio: "", joinDate: new Date().toISOString().slice(0, 10), watchlist: [], ratings: {}, reviews: {}, lists: [], following: [], followers: [] };
+      db.users.push(newUser);
+      saveDB(db);
+      onSuccess(newUser);
+    }
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-box fade-in" style={{ maxWidth: 400 }} onClick={e => e.stopPropagation()}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+          <h2 style={{ fontFamily: "Cinzel", color: COLORS.green3, fontSize: 22 }}>{mode === "login" ? "Sign In" : "Create Account"}</h2>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: COLORS.textMuted, fontSize: 20, cursor: "pointer" }}>✕</button>
+        </div>
+        {mode === "register" && <Input label="Username" value={form.username} onChange={v => setForm({ ...form, username: v })} />}
+        <Input label={mode === "login" ? "Email or Username" : "Email"} value={form.email} onChange={v => setForm({ ...form, email: v })} />
+        <Input label="Password" type="password" value={form.password} onChange={v => setForm({ ...form, password: v })} />
+        {mode === "register" && <Input label="Confirm Password" type="password" value={form.confirm} onChange={v => setForm({ ...form, confirm: v })} />}
+        {err && <div style={{ color: COLORS.danger, fontSize: 13, marginBottom: 12 }}>{err}</div>}
+        <Btn onClick={handle} style={{ width: "100%", marginBottom: 14 }}>{mode === "login" ? "Sign In" : "Register"}</Btn>
+        <div style={{ textAlign: "center", fontSize: 13, color: COLORS.textMuted }}>
+          {mode === "login" ? <>Don't have an account? <span onClick={() => setMode("register")} style={{ color: COLORS.green3, cursor: "pointer" }}>Register</span></> : <>Already have an account? <span onClick={() => setMode("login")} style={{ color: COLORS.green3, cursor: "pointer" }}>Sign In</span></>}
+        </div>
+        <div style={{ marginTop: 16, padding: 12, background: COLORS.bgInput, borderRadius: 6, fontSize: 12, color: COLORS.textMuted }}>
+          <strong style={{ color: COLORS.green4 }}>Demo accounts:</strong><br />
+          Admin: admin@pkdramalist.com / admin123<br />
+          User: user@test.com / user123
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ─── NAVBAR ───────────────────────────────────────────────────────────────────
+const Navbar = ({ page, setPage, openAuth }) => {
+  const { user, logout } = useAuth();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const [results, setResults] = useState([]);
+  const [selectedDrama, setSelectedDrama] = useState(null);
+
+  const doSearch = (q) => {
+    setSearch(q);
+    if (q.length < 2) return setResults([]);
+    const db = getDB();
+    setResults(db.dramas.filter(d => d.title.toLowerCase().includes(q.toLowerCase()) || d.urduTitle?.includes(q)).slice(0, 5));
+  };
+
+  const navLinks = [
+    { key: "home", label: "Home" },
+    { key: "dramas", label: "Dramas" },
+    { key: "movies", label: "Movies" },
+    { key: "top", label: "Top Rated" },
+    { key: "news", label: "News" },
+    { key: "community", label: "Community" },
+  ];
+
+  return (
+    <>
+      <nav style={{ background: COLORS.bgCard, borderBottom: `2px solid ${COLORS.green1}`, position: "sticky", top: 0, zIndex: 500 }}>
+        <div style={{ maxWidth: 1200, margin: "0 auto", padding: "0 20px", display: "flex", alignItems: "center", gap: 16, height: 58 }}>
+          <div onClick={() => setPage("home")} style={{ cursor: "pointer", display: "flex", flexDirection: "column", lineHeight: 1 }}>
+            <span style={{ fontFamily: "Cinzel", fontSize: 20, fontWeight: 700, color: COLORS.green3 }}>PakDramaList</span>
+            <span style={{ fontFamily: "Noto Nastaliq Urdu", fontSize: 12, color: COLORS.green4, direction: "rtl" }}>پاک ڈراما ہب</span>
+          </div>
+          <div style={{ display: "flex", gap: 2, marginLeft: 12 }}>
+            {navLinks.map(l => (
+              <button key={l.key} onClick={() => setPage(l.key)} style={{ background: "none", border: "none", color: page === l.key ? COLORS.green3 : COLORS.textSecondary, padding: "6px 10px", fontSize: 13, fontWeight: 600, cursor: "pointer", borderBottom: page === l.key ? `2px solid ${COLORS.green3}` : "2px solid transparent", transition: "color 0.2s" }}>{l.label}</button>
+            ))}
+          </div>
+          <div style={{ flex: 1 }} />
+          <div style={{ position: "relative" }}>
+            <input value={search} onChange={e => doSearch(e.target.value)} placeholder="🔍 Search dramas..." style={{ background: COLORS.bgInput, border: `1px solid ${COLORS.border}`, borderRadius: 20, color: COLORS.textPrimary, padding: "6px 14px", fontSize: 13, width: 200 }} />
+            {results.length > 0 && (
+              <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: COLORS.bgPanel, border: `1px solid ${COLORS.border}`, borderRadius: 8, overflow: "hidden", zIndex: 999, marginTop: 4 }}>
+                {results.map(d => (
+                  <div key={d.id} onClick={() => { openDramaPage(d); setSearch(""); setResults([]); }} style={{ padding: "8px 12px", cursor: "pointer", fontSize: 13, borderBottom: `1px solid ${COLORS.border}`, display: "flex", alignItems: "center", gap: 10 }}
+                    onMouseEnter={e => e.currentTarget.style.background = COLORS.bgInput}
+                    onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                    <img src={d.poster} alt={d.title} style={{ width: 28, height: 40, objectFit: "cover", borderRadius: 3 }} />
+                    <div>
+                      <div style={{ color: COLORS.textPrimary }}>{d.title}</div>
+                      <div style={{ color: COLORS.textMuted, fontSize: 11 }}>{d.year} · {d.network}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          {user ? (
+            <div style={{ position: "relative" }}>
+              <div onClick={() => setMenuOpen(!menuOpen)} style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", background: COLORS.bgPanel, border: `1px solid ${COLORS.border}`, borderRadius: 20, padding: "4px 12px" }}>
+                <div style={{ width: 28, height: 28, borderRadius: "50%", background: COLORS.green1, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700 }}>{user.avatar}</div>
+                <span style={{ fontSize: 13, color: COLORS.textPrimary }}>{user.username}</span>
+                {user.role !== "member" && <span className="badge" style={{ background: COLORS.gold, color: "#111", fontSize: 10 }}>{user.role}</span>}
+                <span style={{ color: COLORS.textMuted, fontSize: 10 }}>▼</span>
+              </div>
+              {menuOpen && (
+                <div style={{ position: "absolute", top: "110%", right: 0, background: COLORS.bgPanel, border: `1px solid ${COLORS.border}`, borderRadius: 8, overflow: "hidden", minWidth: 160, zIndex: 999 }}>
+                  {[{ label: "My Profile", action: () => { setPage("profile"); setMenuOpen(false); } }, { label: "My Watchlist", action: () => { setPage("watchlist"); setMenuOpen(false); } }, ...(["admin", "moderator", "editor"].includes(user.role) ? [{ label: "⚙️ Admin Panel", action: () => { setPage("admin"); setMenuOpen(false); } }] : []), { label: "Sign Out", action: () => { logout(); setMenuOpen(false); } }].map((item, i) => (
+                    <div key={i} onClick={item.action} style={{ padding: "10px 16px", cursor: "pointer", fontSize: 13, color: item.label === "Sign Out" ? COLORS.danger : COLORS.textPrimary, borderBottom: `1px solid ${COLORS.border}` }}
+                      onMouseEnter={e => e.currentTarget.style.background = COLORS.bgInput}
+                      onMouseLeave={e => e.currentTarget.style.background = "transparent"}>{item.label}</div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div style={{ display: "flex", gap: 8 }}>
+              <Btn size="sm" variant="ghost" onClick={() => openAuth("login")}>Sign In</Btn>
+              <Btn size="sm" onClick={() => openAuth("register")}>Register</Btn>
+            </div>
+          )}
+        </div>
+      </nav>
+      {selectedDrama && <DramaModal drama={selectedDrama} onClose={() => setSelectedDrama(null)} />}
+    </>
+  );
+};
+
+// ─── HOME PAGE ────────────────────────────────────────────────────────────────
+const HomePage = ({ setPage }) => {
+  const db = getDB();
+  const [selectedDrama, setSelectedDrama] = useState(null);
+  const featured = db.dramas.slice(0, 1)[0];
+  const trending = [...db.dramas].sort((a, b) => b.views - a.views).slice(0, 8);
+  const topRated = [...db.dramas].sort((a, b) => b.rating - a.rating).slice(0, 8);
+  const recent = [...db.dramas].sort((a, b) => b.createdAt - a.createdAt).slice(0, 8);
+
+  return (
+    <div className="fade-in">
+      {/* Hero */}
+      {featured && (
+        <div style={{ position: "relative", height: 420, overflow: "hidden", marginBottom: 40 }}>
+          <img src={featured.poster} alt={featured.title} style={{ width: "100%", height: "100%", objectFit: "cover", filter: "blur(4px) brightness(0.3)", transform: "scale(1.05)" }} />
+          <div style={{ position: "absolute", inset: 0, background: `linear-gradient(135deg, rgba(15,26,15,0.95) 0%, rgba(15,26,15,0.5) 100%)` }} />
+          <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", padding: "0 60px" }}>
+            <div style={{ display: "flex", gap: 32, alignItems: "center", maxWidth: 1200, margin: "0 auto", width: "100%" }}>
+              <img src={featured.poster} alt={featured.title} style={{ width: 160, height: 230, objectFit: "cover", borderRadius: 10, boxShadow: `0 8px 40px rgba(0,0,0,0.6), 0 0 0 2px ${COLORS.green1}` }} />
+              <div>
+                <div style={{ color: COLORS.green4, fontSize: 13, fontWeight: 600, letterSpacing: 2, textTransform: "uppercase", marginBottom: 8 }}>✦ Featured Drama</div>
+                <h1 style={{ fontFamily: "Cinzel", fontSize: 36, color: "#fff", marginBottom: 6, textShadow: "0 2px 20px rgba(0,0,0,0.8)" }}>{featured.title}</h1>
+                <div style={{ fontFamily: "Noto Nastaliq Urdu", fontSize: 20, color: COLORS.green4, marginBottom: 12, direction: "rtl" }}>{featured.urduTitle}</div>
+                <div style={{ display: "flex", gap: 16, alignItems: "center", marginBottom: 14 }}>
+                  <span style={{ color: COLORS.starFilled, fontWeight: 700, fontSize: 20 }}>★ {featured.rating}</span>
+                  <span className="badge" style={{ background: COLORS.green1, color: "#fff" }}>{featured.status}</span>
+                  <span style={{ color: COLORS.textSecondary, fontSize: 13 }}>{featured.network} · {featured.year}</span>
+                </div>
+                <p style={{ color: COLORS.textSecondary, maxWidth: 480, lineHeight: 1.7, fontSize: 14, marginBottom: 16 }}>{featured.synopsis.slice(0, 180)}...</p>
+                <div style={{ display: "flex", gap: 10 }}>
+                  <Btn onClick={() => openDramaPage(featured)}>▶ View Details</Btn>
+                  <Btn variant="ghost" onClick={() => setPage("dramas")}>Browse All</Btn>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div style={{ maxWidth: 1200, margin: "0 auto", padding: "0 20px" }}>
+        {/* Stats Bar */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 16, marginBottom: 40 }}>
+          {[{ label: "Total Dramas", value: db.dramas.length, icon: "🎬" }, { label: "Members", value: fmtNum(db.users.length), icon: "👥" }, { label: "Reviews", value: db.reviews.length, icon: "📝" }, { label: "Total Views", value: fmtNum(db.dramas.reduce((a, d) => a + d.views, 0)), icon: "👁" }].map(s => (
+            <Card key={s.label} style={{ padding: 16, textAlign: "center" }}>
+              <div style={{ fontSize: 28, marginBottom: 4 }}>{s.icon}</div>
+              <div style={{ fontFamily: "Cinzel", fontSize: 22, color: COLORS.green3, fontWeight: 700 }}>{s.value}</div>
+              <div style={{ fontSize: 12, color: COLORS.textMuted }}>{s.label}</div>
+            </Card>
+          ))}
+        </div>
+
+        {/* Sections */}
+        {[{ title: "🔥 Trending Now", dramas: trending }, { title: "⭐ Top Rated", dramas: topRated }, { title: "🆕 Recently Added", dramas: recent }].map(section => (
+          <div key={section.title} style={{ marginBottom: 36 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+              <h2 style={{ fontFamily: "Cinzel", fontSize: 20, color: COLORS.textPrimary }}>{section.title}</h2>
+              <span onClick={() => setPage("dramas")} style={{ fontSize: 13, color: COLORS.green3, cursor: "pointer" }}>View All →</span>
+            </div>
+            <div style={{ display: "flex", gap: 14, overflowX: "auto", paddingBottom: 8 }}>
+              {section.dramas.map(d => <DramaCard key={d.id} drama={d} onOpen={openDramaPage} />)}
+            </div>
+          </div>
+        ))}
+
+
+        {/* Actors Section */}
+        <div style={{ marginBottom: 40 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+            <h2 style={{ fontFamily: "Cinzel", fontSize: 20, color: COLORS.textPrimary }}>🎭 Popular Actors & Creators</h2>
+            <span onClick={() => setPage("dramas")} style={{ fontSize: 13, color: COLORS.green3, cursor: "pointer" }}>Explore Cast →</span>
+          </div>
+          <div style={{ display: "flex", gap: 14, overflowX: "auto", paddingBottom: 8 }}>
+            {(db.people || []).slice(0, 10).map(p => (
+              <Card key={p.id || p.name} onClick={() => openPersonPage(p)} style={{ width: 145, flexShrink: 0, padding: 12, textAlign: "center" }}>
+                <img src={personPhoto(p)} alt={p.name} style={{ width: 76, height: 76, borderRadius: "50%", objectFit: "cover", border: `2px solid ${COLORS.green1}`, marginBottom: 8 }} />
+                <div style={{ fontSize: 13, fontWeight: 700, color: COLORS.textPrimary, lineHeight: 1.3 }}>{p.name}</div>
+                <div style={{ fontSize: 11, color: COLORS.green4, marginTop: 4 }}>{(p.roles || []).slice(0, 2).join(", ")}</div>
+              </Card>
+            ))}
+          </div>
+        </div>
+
+        {/* Movies Section */}
+        <div style={{ marginBottom: 40 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+            <h2 style={{ fontFamily: "Cinzel", fontSize: 20, color: COLORS.textPrimary }}>🎥 Pakistani Movies</h2>
+            <span onClick={() => setPage("movies")} style={{ fontSize: 13, color: COLORS.green3, cursor: "pointer" }}>View All →</span>
+          </div>
+          <div style={{ display: "flex", gap: 14, overflowX: "auto", paddingBottom: 8 }}>
+            {(db.movies || []).slice(0, 8).map(m => <MovieCard key={m.id} movie={m} onOpen={openMoviePage} />)}
+          </div>
+        </div>
+
+        {/* News */}
+        <div style={{ marginBottom: 40 }}>
+          <h2 style={{ fontFamily: "Cinzel", fontSize: 20, color: COLORS.textPrimary, marginBottom: 16 }}>📰 Latest News</h2>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 16 }}>
+            {db.news.slice(0, 4).map(n => (
+              <Card key={n.id}>
+                <img src={n.image} alt={n.title} style={{ width: "100%", height: 140, objectFit: "cover" }} />
+                <div style={{ padding: 14 }}>
+                  <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 6 }}>{n.date}</div>
+                  <div style={{ fontSize: 15, fontWeight: 600, color: COLORS.textPrimary, lineHeight: 1.4, marginBottom: 6 }}>{n.title}</div>
+                  <p style={{ fontSize: 13, color: COLORS.textSecondary, lineHeight: 1.6 }}>{n.body.slice(0, 100)}...</p>
+                </div>
+              </Card>
+            ))}
+          </div>
+        </div>
+      </div>
+      {selectedDrama && <DramaModal drama={selectedDrama} onClose={() => setSelectedDrama(null)} />}
+    </div>
+  );
+};
+
+// ─── DRAMAS PAGE ──────────────────────────────────────────────────────────────
+const DramasPage = () => {
+  const db = getDB();
+  const [selectedDrama, setSelectedDrama] = useState(null);
+  const [search, setSearch] = useState("");
+  const [genre, setGenre] = useState("");
+  const [network, setNetwork] = useState("");
+  const [status, setStatus] = useState("");
+  const [year, setYear] = useState("");
+  const [sortBy, setSortBy] = useState("rating");
+  const [viewMode, setViewMode] = useState("grid");
+
+  const years = [...new Set(db.dramas.map(d => d.year))].sort((a, b) => b - a);
+
+  let filtered = db.dramas
+    .filter(d => !search || d.title.toLowerCase().includes(search.toLowerCase()))
+    .filter(d => !genre || d.genres.includes(genre))
+    .filter(d => !network || d.network === network)
+    .filter(d => !status || d.status === status)
+    .filter(d => !year || d.year === parseInt(year));
+
+  if (sortBy === "rating") filtered.sort((a, b) => b.rating - a.rating);
+  else if (sortBy === "year") filtered.sort((a, b) => b.year - a.year);
+  else if (sortBy === "views") filtered.sort((a, b) => b.views - a.views);
+  else if (sortBy === "title") filtered.sort((a, b) => a.title.localeCompare(b.title));
+
+  return (
+    <div className="fade-in" style={{ maxWidth: 1200, margin: "0 auto", padding: "28px 20px" }}>
+      <h1 style={{ fontFamily: "Cinzel", fontSize: 26, color: COLORS.textPrimary, marginBottom: 20 }}>Pakistani Dramas</h1>
+      
+      {/* Filters */}
+      <Card style={{ padding: 16, marginBottom: 24 }}>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "flex-end" }}>
+          <div style={{ flex: "1 1 200px" }}>
+            <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 4 }}>Search</div>
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search dramas..." style={{ width: "100%", background: COLORS.bgInput, border: `1px solid ${COLORS.border}`, borderRadius: 6, color: COLORS.textPrimary, padding: "7px 12px", fontSize: 13 }} />
+          </div>
+          {[{ label: "Genre", val: genre, set: setGenre, opts: GENRES }, { label: "Network", val: network, set: setNetwork, opts: NETWORKS }, { label: "Status", val: status, set: setStatus, opts: DRAMA_STATUS }, { label: "Year", val: year, set: setYear, opts: years.map(String) }, { label: "Sort", val: sortBy, set: setSortBy, opts: ["rating", "year", "views", "title"] }].map(f => (
+            <div key={f.label} style={{ flex: "1 1 130px" }}>
+              <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 4 }}>{f.label}</div>
+              <select value={f.val} onChange={e => f.set(e.target.value)} style={{ width: "100%", background: COLORS.bgInput, border: `1px solid ${COLORS.border}`, borderRadius: 6, color: COLORS.textPrimary, padding: "7px 10px", fontSize: 13 }}>
+                <option value="">All</option>
+                {f.opts.map(o => <option key={o} value={o}>{o}</option>)}
+              </select>
+            </div>
+          ))}
+          <Btn size="sm" variant="ghost" onClick={() => { setSearch(""); setGenre(""); setNetwork(""); setStatus(""); setYear(""); setSortBy("rating"); }}>Reset</Btn>
+          <div style={{ display: "flex", gap: 4 }}>
+            {["grid", "list"].map(m => <Btn key={m} size="sm" variant={viewMode === m ? "primary" : "ghost"} onClick={() => setViewMode(m)}>{m === "grid" ? "⊞" : "≡"}</Btn>)}
+          </div>
+        </div>
+      </Card>
+
+      <div style={{ color: COLORS.textMuted, fontSize: 13, marginBottom: 16 }}>{filtered.length} drama{filtered.length !== 1 ? "s" : ""} found</div>
+
+      {viewMode === "grid" ? (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 16 }}>
+          {filtered.map(d => <DramaCard key={d.id} drama={d} onOpen={openDramaPage} />)}
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {filtered.map((d, i) => (
+            <Card key={d.id} onClick={() => openDramaPage(d)} style={{ display: "flex", gap: 16, padding: 12, alignItems: "center" }}>
+              <div style={{ color: COLORS.textMuted, width: 24, textAlign: "center", fontWeight: 700 }}>{i + 1}</div>
+              <img src={d.poster} alt={d.title} style={{ width: 56, height: 80, objectFit: "cover", borderRadius: 4 }} />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 15, fontWeight: 600, color: COLORS.textPrimary, marginBottom: 2 }}>{d.title}</div>
+                <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 4 }}>{d.network} · {d.year} · {d.episodes} eps</div>
+                <div>{d.genres.map(g => <span key={g} className="tag" style={{ fontSize: 11 }}>{g}</span>)}</div>
+              </div>
+              <div style={{ textAlign: "center" }}>
+                <div style={{ color: COLORS.starFilled, fontWeight: 700, fontSize: 18 }}>★ {d.rating}</div>
+                <div style={{ fontSize: 11, color: COLORS.textMuted }}>{fmtNum(d.ratingCount)}</div>
+              </div>
+              <span className="badge" style={{ background: d.status === "Completed" ? COLORS.green1 : COLORS.gold, color: "#fff" }}>{d.status}</span>
+            </Card>
+          ))}
+        </div>
+      )}
+      {selectedDrama && <DramaModal drama={selectedDrama} onClose={() => setSelectedDrama(null)} />}
+    </div>
+  );
+};
+
+// ─── TOP RATED PAGE ───────────────────────────────────────────────────────────
+const TopRatedPage = () => {
+  const db = getDB();
+  const [selectedDrama, setSelectedDrama] = useState(null);
+  const sorted = [...db.dramas].sort((a, b) => b.rating - a.rating);
+
+  return (
+    <div className="fade-in" style={{ maxWidth: 1000, margin: "0 auto", padding: "28px 20px" }}>
+      <h1 style={{ fontFamily: "Cinzel", fontSize: 26, color: COLORS.textPrimary, marginBottom: 6 }}>Top Rated Dramas</h1>
+      <p style={{ color: COLORS.textSecondary, fontSize: 14, marginBottom: 24 }}>Rankings based on user ratings and reviews</p>
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {sorted.map((d, i) => (
+          <Card key={d.id} onClick={() => openDramaPage(d)} style={{ display: "flex", gap: 16, padding: 14, alignItems: "center" }}>
+            <div style={{ width: 40, textAlign: "center" }}>
+              <div style={{ fontFamily: "Cinzel", fontSize: i < 3 ? 22 : 16, fontWeight: 700, color: i === 0 ? COLORS.gold : i === 1 ? "#c0c0c0" : i === 2 ? "#cd7f32" : COLORS.textMuted }}>#{i + 1}</div>
+            </div>
+            <img src={d.poster} alt={d.title} style={{ width: 60, height: 85, objectFit: "cover", borderRadius: 6 }} />
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 16, fontWeight: 600, color: COLORS.textPrimary, marginBottom: 3 }}>{d.title}</div>
+              <div style={{ fontFamily: "Noto Nastaliq Urdu", fontSize: 14, color: COLORS.green4, direction: "rtl", marginBottom: 4 }}>{d.urduTitle}</div>
+              <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 6 }}>{d.network} · {d.year} · {d.director}</div>
+              <div>{d.genres.slice(0, 3).map(g => <span key={g} className="tag" style={{ fontSize: 11 }}>{g}</span>)}</div>
+            </div>
+            <div style={{ textAlign: "center", minWidth: 80 }}>
+              <div style={{ fontSize: 28, fontWeight: 700, color: COLORS.starFilled }}>★ {d.rating}</div>
+              <div style={{ fontSize: 11, color: COLORS.textMuted }}>{fmtNum(d.ratingCount)} ratings</div>
+              <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 2 }}>{fmtNum(d.views)} views</div>
+            </div>
+          </Card>
+        ))}
+      </div>
+      {selectedDrama && <DramaModal drama={selectedDrama} onClose={() => setSelectedDrama(null)} />}
+    </div>
+  );
+};
+
+// ─── NEWS PAGE ────────────────────────────────────────────────────────────────
+const NewsPage = () => {
+  const db = getDB();
+  const [selected, setSelected] = useState(null);
+
+  return (
+    <div className="fade-in" style={{ maxWidth: 1000, margin: "0 auto", padding: "28px 20px" }}>
+      <h1 style={{ fontFamily: "Cinzel", fontSize: 26, color: COLORS.textPrimary, marginBottom: 24 }}>Drama News</h1>
+      {selected ? (
+        <div className="fade-in">
+          <Btn size="sm" variant="ghost" onClick={() => setSelected(null)} style={{ marginBottom: 20 }}>← Back to News</Btn>
+          <img src={selected.image} alt={selected.title} style={{ width: "100%", height: 300, objectFit: "cover", borderRadius: 10, marginBottom: 20 }} />
+          <h2 style={{ fontFamily: "Cinzel", fontSize: 24, color: COLORS.textPrimary, marginBottom: 8 }}>{selected.title}</h2>
+          <div style={{ fontSize: 13, color: COLORS.textMuted, marginBottom: 16 }}>By {selected.author} · {selected.date}</div>
+          <p style={{ color: COLORS.textSecondary, lineHeight: 1.8, fontSize: 15 }}>{selected.body}</p>
+        </div>
+      ) : (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 20 }}>
+          {db.news.map(n => (
+            <Card key={n.id} onClick={() => setSelected(n)}>
+              <img src={n.image} alt={n.title} style={{ width: "100%", height: 160, objectFit: "cover" }} />
+              <div style={{ padding: 16 }}>
+                <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 6 }}>{n.date}</div>
+                <div style={{ fontSize: 15, fontWeight: 600, color: COLORS.textPrimary, lineHeight: 1.4, marginBottom: 8 }}>{n.title}</div>
+                <p style={{ fontSize: 13, color: COLORS.textSecondary, lineHeight: 1.6 }}>{n.body.slice(0, 120)}...</p>
+                <div style={{ marginTop: 10, color: COLORS.green3, fontSize: 13 }}>Read More →</div>
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ─── COMMUNITY PAGE ────────────────────────────────────────────────────────────
+const CommunityPage = () => {
+  const db = getDB();
+  const { user } = useAuth();
+  const topReviewers = db.users.map(u => ({ ...u, reviewCount: db.reviews.filter(r => r.userId === u.id).length })).sort((a, b) => b.reviewCount - a.reviewCount).slice(0, 10);
+  const recentReviews = [...db.reviews].sort((a, b) => b.date > a.date ? 1 : -1).slice(0, 10);
+
+  return (
+    <div className="fade-in" style={{ maxWidth: 1000, margin: "0 auto", padding: "28px 20px" }}>
+      <h1 style={{ fontFamily: "Cinzel", fontSize: 26, color: COLORS.textPrimary, marginBottom: 24 }}>Community</h1>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}>
+        <div>
+          <h2 style={{ fontSize: 18, fontWeight: 700, color: COLORS.green4, marginBottom: 14 }}>🏆 Top Reviewers</h2>
+          {topReviewers.map((u, i) => (
+            <Card key={u.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", marginBottom: 8 }}>
+              <div style={{ color: COLORS.textMuted, width: 20, textAlign: "center", fontWeight: 700 }}>#{i + 1}</div>
+              <div style={{ width: 36, height: 36, borderRadius: "50%", background: COLORS.green1, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700 }}>{u.avatar}</div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 14, fontWeight: 600, color: COLORS.textPrimary }}>{u.username}</div>
+                <div style={{ fontSize: 12, color: COLORS.textMuted }}>{u.reviewCount} reviews</div>
+              </div>
+              <span className="badge" style={{ background: u.role === "admin" ? COLORS.gold : COLORS.green1, color: u.role === "admin" ? "#111" : "#fff" }}>{u.role}</span>
+            </Card>
+          ))}
+        </div>
+        <div>
+          <h2 style={{ fontSize: 18, fontWeight: 700, color: COLORS.green4, marginBottom: 14 }}>💬 Recent Reviews</h2>
+          {recentReviews.length === 0 ? (
+            <div style={{ color: COLORS.textMuted, textAlign: "center", padding: 40 }}>No reviews yet. Be the first to review!</div>
+          ) : recentReviews.map(r => {
+            const drama = db.dramas.find(d => d.id === r.dramaId);
+            return (
+              <Card key={r.id} style={{ padding: "10px 14px", marginBottom: 10 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                  <div style={{ width: 28, height: 28, borderRadius: "50%", background: COLORS.green1, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 700 }}>{r.username[0].toUpperCase()}</div>
+                  <div style={{ flex: 1 }}>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: COLORS.textPrimary }}>{r.username}</span>
+                    <span style={{ fontSize: 12, color: COLORS.textMuted }}> reviewed </span>
+                    <span style={{ fontSize: 13, color: COLORS.green3 }}>{drama?.title || "Unknown"}</span>
+                  </div>
+                  <span style={{ color: COLORS.starFilled, fontSize: 13 }}>★ {r.rating}</span>
+                </div>
+                <p style={{ fontSize: 13, color: COLORS.textSecondary, lineHeight: 1.5 }}>{r.text.slice(0, 100)}{r.text.length > 100 ? "..." : ""}</p>
+              </Card>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ─── PROFILE PAGE ─────────────────────────────────────────────────────────────
+const ProfilePage = () => {
+  const { user, updateUser } = useAuth();
+  const [editing, setEditing] = useState(false);
+  const [bio, setBio] = useState(user?.bio || "");
+  const [selectedDrama, setSelectedDrama] = useState(null);
+  if (!user) return <div style={{ textAlign: "center", padding: 60, color: COLORS.textMuted }}>Please sign in to view your profile.</div>;
+
+  const db = getDB();
+  const userReviews = db.reviews.filter(r => r.userId === user.id);
+  const watchlist = (user.watchlist || []).map(w => ({ ...w, drama: db.dramas.find(d => d.id === w.dramaId) })).filter(w => w.drama);
+
+  const save = () => {
+    const db2 = getDB();
+    const u = db2.users.find(u => u.id === user.id);
+    if (u) { u.bio = bio; saveDB(db2); updateUser(u); }
+    setEditing(false);
+  };
+
+  const WATCH_CATEGORIES = [
+    { key: "watching", label: "Watching", color: COLORS.green3 },
+    { key: "completed", label: "Completed", color: COLORS.green1 },
+    { key: "plan_to_watch", label: "Plan to Watch", color: COLORS.gold },
+    { key: "on_hold", label: "On Hold", color: "#888" },
+    { key: "dropped", label: "Dropped", color: COLORS.danger },
+  ];
+
+  return (
+    <div className="fade-in" style={{ maxWidth: 1000, margin: "0 auto", padding: "28px 20px" }}>
+      <Card style={{ padding: 24, marginBottom: 28 }}>
+        <div style={{ display: "flex", gap: 20, alignItems: "flex-start" }}>
+          <div style={{ width: 80, height: 80, borderRadius: "50%", background: `linear-gradient(135deg, ${COLORS.green1}, ${COLORS.green2})`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 32, fontWeight: 700, flexShrink: 0 }}>{user.avatar}</div>
+          <div style={{ flex: 1 }}>
+            <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 4 }}>
+              <h2 style={{ fontFamily: "Cinzel", fontSize: 22, color: COLORS.textPrimary }}>{user.username}</h2>
+              <span className="badge" style={{ background: user.role === "admin" ? COLORS.gold : COLORS.green1, color: user.role === "admin" ? "#111" : "#fff" }}>{user.role}</span>
+            </div>
+            <div style={{ fontSize: 13, color: COLORS.textMuted, marginBottom: 10 }}>Member since {user.joinDate}</div>
+            {editing ? (
+              <div>
+                <textarea value={bio} onChange={e => setBio(e.target.value)} rows={3} placeholder="Tell us about yourself..." style={{ width: "100%", background: COLORS.bgInput, border: `1px solid ${COLORS.border}`, borderRadius: 6, color: COLORS.textPrimary, padding: 10, fontSize: 13, resize: "vertical", marginBottom: 8 }} />
+                <div style={{ display: "flex", gap: 8 }}><Btn size="sm" onClick={save}>Save</Btn><Btn size="sm" variant="ghost" onClick={() => setEditing(false)}>Cancel</Btn></div>
+              </div>
+            ) : (
+              <div>
+                <p style={{ color: COLORS.textSecondary, fontSize: 14, marginBottom: 8 }}>{user.bio || "No bio yet."}</p>
+                <Btn size="sm" variant="ghost" onClick={() => setEditing(true)}>✏️ Edit Bio</Btn>
+              </div>
+            )}
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, textAlign: "center" }}>
+            {[{ label: "Watchlist", value: watchlist.length }, { label: "Reviews", value: userReviews.length }, { label: "Ratings", value: Object.keys(user.ratings || {}).length }, { label: "Following", value: (user.following || []).length }].map(s => (
+              <div key={s.label} style={{ background: COLORS.bgInput, borderRadius: 8, padding: "10px 16px" }}>
+                <div style={{ fontFamily: "Cinzel", fontSize: 20, color: COLORS.green3, fontWeight: 700 }}>{s.value}</div>
+                <div style={{ fontSize: 11, color: COLORS.textMuted }}>{s.label}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </Card>
+
+      {/* Watchlist by category */}
+      <h2 style={{ fontFamily: "Cinzel", fontSize: 18, color: COLORS.textPrimary, marginBottom: 16 }}>My Drama List</h2>
+      {WATCH_CATEGORIES.map(cat => {
+        const items = watchlist.filter(w => w.status === cat.key);
+        if (items.length === 0) return null;
+        return (
+          <div key={cat.key} style={{ marginBottom: 24 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+              <div style={{ width: 4, height: 20, background: cat.color, borderRadius: 2 }} />
+              <h3 style={{ fontSize: 15, fontWeight: 700, color: cat.color }}>{cat.label} ({items.length})</h3>
+            </div>
+            <div style={{ display: "flex", gap: 12, overflowX: "auto", paddingBottom: 6 }}>
+              {items.map(({ drama }) => drama && <DramaCard key={drama.id} drama={drama} onOpen={openDramaPage} />)}
+            </div>
+          </div>
+        );
+      })}
+
+      {/* My Reviews */}
+      {userReviews.length > 0 && (
+        <div>
+          <h2 style={{ fontFamily: "Cinzel", fontSize: 18, color: COLORS.textPrimary, marginBottom: 16 }}>My Reviews</h2>
+          {userReviews.map(r => {
+            const drama = db.dramas.find(d => d.id === r.dramaId);
+            return (
+              <Card key={r.id} style={{ padding: 14, marginBottom: 10 }}>
+                <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+                  {drama && <img src={drama.poster} alt={drama.title} style={{ width: 50, height: 70, objectFit: "cover", borderRadius: 4 }} />}
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <div style={{ fontSize: 14, fontWeight: 600, color: COLORS.green3 }}>{drama?.title}</div>
+                      <span style={{ color: COLORS.starFilled, fontSize: 14 }}>★ {r.rating}/10</span>
+                    </div>
+                    <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 6 }}>{r.date}</div>
+                    <p style={{ fontSize: 13, color: COLORS.textSecondary, lineHeight: 1.6 }}>{r.text}</p>
+                  </div>
+                </div>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+      {selectedDrama && <DramaModal drama={selectedDrama} onClose={() => setSelectedDrama(null)} />}
+    </div>
+  );
+};
+
+// ─── WATCHLIST PAGE ───────────────────────────────────────────────────────────
+const WatchlistPage = () => {
+  const { user } = useAuth();
+  const [selectedDrama, setSelectedDrama] = useState(null);
+  if (!user) return <div style={{ textAlign: "center", padding: 60, color: COLORS.textMuted }}>Please sign in to view your watchlist.</div>;
+
+  const db = getDB();
+  const watchlist = (user.watchlist || []).map(w => ({ ...w, drama: db.dramas.find(d => d.id === w.dramaId) })).filter(w => w.drama);
+
+  return (
+    <div className="fade-in" style={{ maxWidth: 900, margin: "0 auto", padding: "28px 20px" }}>
+      <h1 style={{ fontFamily: "Cinzel", fontSize: 26, color: COLORS.textPrimary, marginBottom: 24 }}>My Watchlist</h1>
+      {watchlist.length === 0 ? (
+        <div style={{ textAlign: "center", padding: 60, color: COLORS.textMuted }}>
+          <div style={{ fontSize: 48, marginBottom: 16 }}>📺</div>
+          <div style={{ fontSize: 18, marginBottom: 8 }}>Your watchlist is empty</div>
+          <div style={{ fontSize: 14 }}>Start adding dramas to track your viewing progress!</div>
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {watchlist.map(({ drama, status, addedAt }) => (
+            <Card key={drama.id} onClick={() => openDramaPage(drama)} style={{ display: "flex", gap: 14, padding: "12px 16px", alignItems: "center" }}>
+              <img src={drama.poster} alt={drama.title} style={{ width: 50, height: 70, objectFit: "cover", borderRadius: 4 }} />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 15, fontWeight: 600, color: COLORS.textPrimary, marginBottom: 3 }}>{drama.title}</div>
+                <div style={{ fontSize: 12, color: COLORS.textMuted }}>{drama.network} · {drama.year} · {drama.episodes} eps</div>
+              </div>
+              <span className="badge" style={{ background: status === "completed" ? COLORS.green1 : status === "watching" ? COLORS.green2 : status === "dropped" ? COLORS.danger : COLORS.gold, color: "#fff" }}>{status.replace("_", " ")}</span>
+              <span style={{ color: COLORS.starFilled }}>★ {drama.rating}</span>
+            </Card>
+          ))}
+        </div>
+      )}
+      {selectedDrama && <DramaModal drama={selectedDrama} onClose={() => setSelectedDrama(null)} />}
+    </div>
+  );
+};
+
+// ─── ADMIN PANEL ──────────────────────────────────────────────────────────────
+
+const PersonPage = ({ person }) => {
+  const db = getDB();
+  const dramas = db.dramas || [];
+  const related = dramas.filter(d => {
+    const cast = d.cast || [];
+    const director = d.director || "";
+    const writer = d.writer || "";
+    return cast.includes(person.id) || cast.includes(person.name) || director === person.id || director === person.name || writer === person.id || writer === person.name;
+  });
+
+  return (
+    <div className="fade-in" style={{ maxWidth: 1100, margin: "0 auto", padding: "28px 20px" }}>
+      <button onClick={() => { window.location.hash = "#/dramas"; }} style={{ background: "none", border: "none", color: COLORS.green3, cursor: "pointer", marginBottom: 18 }}>← Back to Dramas</button>
+      <Card style={{ padding: 22, display: "flex", gap: 22, alignItems: "flex-start", marginBottom: 24 }}>
+        {person.photo ? (
+          <img src={person.photo} alt={person.name} style={{ width: 170, height: 220, objectFit: "cover", borderRadius: 10 }} />
+        ) : (
+          <div style={{ width: 170, height: 220, borderRadius: 10, background: COLORS.green1, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 60, fontWeight: 700 }}>{person.name[0]}</div>
+        )}
+        <div style={{ flex: 1 }}>
+          <h1 style={{ fontFamily: "Cinzel", fontSize: 30, color: COLORS.textPrimary, marginBottom: 8 }}>{person.name}</h1>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+            {(person.roles || ["Actor"]).map(r => <span key={r} className="badge" style={{ background: COLORS.green1, color: "#fff" }}>{r}</span>)}
+            {person.birthYear && <span className="badge" style={{ background: COLORS.bgPanel, color: COLORS.textSecondary, border: `1px solid ${COLORS.border}` }}>Born {person.birthYear}</span>}
+          </div>
+          <p style={{ color: COLORS.textSecondary, lineHeight: 1.7, fontSize: 14 }}>{person.bio || "No biography added yet."}</p>
+          {person.knownFor && (
+            <div style={{ marginTop: 14, fontSize: 13, color: COLORS.textSecondary }}>
+              <strong style={{ color: COLORS.green4 }}>Known For:</strong> {person.knownFor}
+            </div>
+          )}
+        </div>
+      </Card>
+
+      <h2 style={{ fontFamily: "Cinzel", fontSize: 20, color: COLORS.textPrimary, marginBottom: 14 }}>Dramas</h2>
+      {related.length === 0 ? (
+        <Card style={{ padding: 18, color: COLORS.textMuted }}>No dramas linked to this person yet.</Card>
+      ) : (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 16 }}>
+          {related.map(d => <DramaCard key={d.id} drama={d} onOpen={() => { window.location.hash = "#/drama/" + dramaSlug(d.title); window.dispatchEvent(new HashChangeEvent("hashchange")); }} />)}
+        </div>
+      )}
+    </div>
+  );
+};
+
+
+const AdminPanel = () => {
+  const { user } = useAuth();
+  const [tab, setTab] = useState("dashboard");
+  const [db, setDb] = useState(getDB());
+
+  const refresh = () => setDb(getDB());
+
+  if (!user || !["admin", "moderator", "editor"].includes(user.role)) {
+    return (
+      <div style={{ textAlign: "center", padding: 80 }}>
+        <div style={{ fontSize: 48, marginBottom: 16 }}>🔒</div>
+        <div style={{ fontFamily: "Cinzel", fontSize: 24, color: COLORS.danger, marginBottom: 8 }}>Access Denied</div>
+        <div style={{ color: COLORS.textMuted }}>You do not have permission to access the admin panel.</div>
+      </div>
+    );
+  }
+
+  const adminTabs = [
+    { key: "dashboard", label: "📊 Dashboard", roles: ["admin", "moderator", "editor"] },
+    { key: "dramas", label: "🎬 Manage Dramas", roles: ["admin", "moderator", "editor"] },
+    { key: "add_drama", label: "➕ Add Drama", roles: ["admin", "moderator", "editor"] },
+    { key: "people", label: "🎭 Cast & Crew", roles: ["admin", "moderator", "editor"] },
+    { key: "add_person", label: "➕ Add Person", roles: ["admin", "moderator", "editor"] },
+    { key: "users", label: "👥 Manage Users", roles: ["admin"] },
+    { key: "reviews", label: "💬 Reviews", roles: ["admin", "moderator"] },
+    { key: "news", label: "📰 News", roles: ["admin", "moderator"] },
+    { key: "settings", label: "⚙️ Settings", roles: ["admin"] },
+  ].filter(t => t.roles.includes(user.role));
+
+  return (
+    <div style={{ display: "flex", minHeight: "calc(100vh - 58px)" }}>
+      {/* Sidebar */}
+      <div style={{ width: 220, background: COLORS.bgCard, borderRight: `1px solid ${COLORS.border}`, padding: "20px 0", flexShrink: 0 }}>
+        <div style={{ padding: "0 16px 16px", borderBottom: `1px solid ${COLORS.border}`, marginBottom: 8 }}>
+          <div style={{ fontFamily: "Cinzel", fontSize: 14, color: COLORS.green3, fontWeight: 700 }}>Admin Panel</div>
+          <div style={{ fontSize: 12, color: COLORS.textMuted, marginTop: 2 }}>{user.username} · {user.role}</div>
+        </div>
+        {adminTabs.map(t => (
+          <div key={t.key} onClick={() => { setTab(t.key); refresh(); }} style={{ padding: "10px 16px", cursor: "pointer", fontSize: 13, color: tab === t.key ? COLORS.green3 : COLORS.textSecondary, background: tab === t.key ? COLORS.bgPanel : "transparent", borderLeft: tab === t.key ? `3px solid ${COLORS.green3}` : "3px solid transparent", transition: "all 0.15s" }}>{t.label}</div>
+        ))}
+      </div>
+
+      {/* Content */}
+      <div style={{ flex: 1, padding: 28, overflowY: "auto" }} className="fade-in">
+        {tab === "dashboard" && <AdminDashboard db={db} />}
+        {tab === "dramas" && <AdminDramas db={db} refresh={refresh} />}
+        {tab === "add_drama" && <AdminAddDrama onSave={() => { refresh(); setTab("dramas"); }} />}
+        {tab === "people" && <AdminPeople db={db} refresh={refresh} />}
+        {tab === "add_person" && <AdminAddPerson onSave={() => { refresh(); setTab("people"); }} />}
+        {tab === "users" && <AdminUsers db={db} refresh={refresh} currentUser={user} />}
+        {tab === "reviews" && <AdminReviews db={db} refresh={refresh} />}
+        {tab === "news" && <AdminNews db={db} refresh={refresh} user={user} />}
+        {tab === "settings" && <AdminSettings db={db} refresh={refresh} />}
+      </div>
+    </div>
+  );
+};
+
+const AdminDashboard = ({ db }) => {
+  const stats = [
+    { label: "Total Dramas", value: db.dramas.length, icon: "🎬", color: COLORS.green3 },
+    { label: "Cast & Crew", value: (db.people || []).length, icon: "🎭", color: COLORS.green4 },
+    { label: "Total Users", value: db.users.length, icon: "👥", color: COLORS.gold },
+    { label: "Total Reviews", value: db.reviews.length, icon: "💬", color: COLORS.green4 },
+    { label: "News Articles", value: db.news.length, icon: "📰", color: COLORS.goldLight },
+  ];
+  return (
+    <div>
+      <h2 style={{ fontFamily: "Cinzel", fontSize: 22, color: COLORS.textPrimary, marginBottom: 20 }}>Dashboard Overview</h2>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: 28 }}>
+        {stats.map(s => (
+          <Card key={s.label} style={{ padding: 20, textAlign: "center" }}>
+            <div style={{ fontSize: 32, marginBottom: 8 }}>{s.icon}</div>
+            <div style={{ fontFamily: "Cinzel", fontSize: 26, color: s.color, fontWeight: 700 }}>{s.value}</div>
+            <div style={{ fontSize: 13, color: COLORS.textMuted }}>{s.label}</div>
+          </Card>
+        ))}
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+        <Card style={{ padding: 20 }}>
+          <h3 style={{ fontSize: 15, color: COLORS.green4, marginBottom: 14 }}>Recent Dramas</h3>
+          {[...db.dramas].sort((a, b) => b.createdAt - a.createdAt).slice(0, 5).map(d => (
+            <div key={d.id} style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 10 }}>
+              <img src={d.poster} alt={d.title} style={{ width: 36, height: 50, objectFit: "cover", borderRadius: 3 }} />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: COLORS.textPrimary }}>{d.title}</div>
+                <div style={{ fontSize: 11, color: COLORS.textMuted }}>{d.year} · {d.status}</div>
+              </div>
+              <span style={{ color: COLORS.starFilled, fontSize: 13 }}>★ {d.rating}</span>
+            </div>
+          ))}
+        </Card>
+        <Card style={{ padding: 20 }}>
+          <h3 style={{ fontSize: 15, color: COLORS.green4, marginBottom: 14 }}>Recent Users</h3>
+          {db.users.slice(-5).reverse().map(u => (
+            <div key={u.id} style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 10 }}>
+              <div style={{ width: 32, height: 32, borderRadius: "50%", background: COLORS.green1, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700 }}>{u.avatar}</div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: COLORS.textPrimary }}>{u.username}</div>
+                <div style={{ fontSize: 11, color: COLORS.textMuted }}>{u.joinDate}</div>
+              </div>
+              <span className="badge" style={{ background: u.role === "admin" ? COLORS.gold : COLORS.green1, color: u.role === "admin" ? "#111" : "#fff" }}>{u.role}</span>
+            </div>
+          ))}
+        </Card>
+      </div>
+    </div>
+  );
+};
+
+const AdminDramas = ({ db, refresh }) => {
+  const [editing, setEditing] = useState(null);
+  const [search, setSearch] = useState("");
+  const filtered = db.dramas.filter(d => !search || d.title.toLowerCase().includes(search.toLowerCase()));
+
+  const deleteDrama = (id) => {
+    if (!window.confirm("Delete this drama?")) return;
+    const db2 = getDB();
+    db2.dramas = db2.dramas.filter(d => d.id !== id);
+    saveDB(db2); refresh();
+  };
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+        <h2 style={{ fontFamily: "Cinzel", fontSize: 22, color: COLORS.textPrimary }}>Manage Dramas ({db.dramas.length})</h2>
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search..." style={{ background: COLORS.bgInput, border: `1px solid ${COLORS.border}`, borderRadius: 6, color: COLORS.textPrimary, padding: "6px 12px", fontSize: 13 }} />
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {filtered.map(d => (
+          <Card key={d.id} style={{ display: "flex", gap: 14, padding: "10px 14px", alignItems: "center" }}>
+            <img src={d.poster} alt={d.title} style={{ width: 44, height: 60, objectFit: "cover", borderRadius: 4 }} />
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 14, fontWeight: 600, color: COLORS.textPrimary }}>{d.title}</div>
+              <div style={{ fontSize: 12, color: COLORS.textMuted }}>{d.network} · {d.year} · {d.episodes} eps · {d.status}</div>
+              <div style={{ fontSize: 12, color: COLORS.textMuted }}>★ {d.rating} · {fmtNum(d.views)} views</div>
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <Btn size="sm" variant="ghost" onClick={() => setEditing(d)}>✏️ Edit</Btn>
+              <Btn size="sm" variant="danger" onClick={() => deleteDrama(d.id)}>🗑️ Delete</Btn>
+            </div>
+          </Card>
+        ))}
+      </div>
+      {editing && <AdminEditDrama drama={editing} onClose={() => { setEditing(null); refresh(); }} />}
+    </div>
+  );
+};
+
+const MultiPersonPicker = ({ label, selectedIds, setSelectedIds, roleFilter }) => {
+  const db = getDB();
+  const [q, setQ] = useState("");
+  const people = (db.people || []).filter(p => !roleFilter || (p.roles || []).includes(roleFilter));
+  const filtered = people.filter(p => !q || p.name.toLowerCase().includes(q.toLowerCase())).slice(0, 8);
+  const selected = selectedIds.map(id => people.find(p => p.id === id)).filter(Boolean);
+  const add = (id) => { if (!selectedIds.includes(id)) setSelectedIds([...selectedIds, id]); setQ(""); };
+  const remove = (id) => setSelectedIds(selectedIds.filter(x => x !== id));
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <label style={{ display: "block", fontSize: 12, color: COLORS.textSecondary, marginBottom: 6 }}>{label}</label>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
+        {selected.length === 0 && <span style={{ color: COLORS.textMuted, fontSize: 12 }}>No {label.toLowerCase()} selected yet.</span>}
+        {selected.map(p => (
+          <span key={p.id} className="tag" onClick={() => remove(p.id)} style={{ background: COLORS.green1, color: "#fff" }}>
+            {p.name} ✕
+          </span>
+        ))}
+      </div>
+      <input value={q} onChange={e => setQ(e.target.value)} placeholder={`Search ${label.toLowerCase()}...`} style={{ width: "100%", background: COLORS.bgInput, border: `1px solid ${COLORS.border}`, borderRadius: 6, color: COLORS.textPrimary, padding: "7px 10px", fontSize: 13, marginBottom: 6 }} />
+      {(q || filtered.length > 0) && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))", gap: 8 }}>
+          {filtered.map(p => (
+            <div key={p.id} onClick={() => add(p.id)} style={{ display: "flex", alignItems: "center", gap: 8, background: selectedIds.includes(p.id) ? COLORS.bgPanel : COLORS.bgInput, border: `1px solid ${selectedIds.includes(p.id) ? COLORS.green2 : COLORS.border}`, borderRadius: 8, padding: 8, cursor: "pointer" }}>
+              <img src={personPhoto(p)} alt={p.name} style={{ width: 34, height: 34, borderRadius: "50%", objectFit: "cover" }} />
+              <div>
+                <div style={{ fontSize: 13, color: COLORS.textPrimary, fontWeight: 700 }}>{p.name}</div>
+                <div style={{ fontSize: 11, color: COLORS.textMuted }}>{(p.roles || []).join(", ")}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+
+const AdminField = ({ label, value, onChange, type = "text", opts, ta = false }) => (
+  <div style={{ marginBottom: 14 }}>
+    <label style={{ display: "block", fontSize: 12, color: COLORS.textSecondary, marginBottom: 4 }}>{label}</label>
+    {ta ? (
+      <textarea value={value || ""} onChange={onChange} rows={3} style={{ width: "100%", background: COLORS.bgInput, border: `1px solid ${COLORS.border}`, borderRadius: 6, color: COLORS.textPrimary, padding: "7px 10px", resize: "vertical", fontSize: 13 }} />
+    ) : opts ? (
+      <select value={value || ""} onChange={onChange} style={{ width: "100%", background: COLORS.bgInput, border: `1px solid ${COLORS.border}`, borderRadius: 6, color: COLORS.textPrimary, padding: "7px 10px", fontSize: 13 }}>
+        <option value="">— Select —</option>
+        {opts.map(o => <option key={o} value={o}>{o}</option>)}
+      </select>
+    ) : (
+      <input type={type} value={value || ""} onChange={onChange} style={{ width: "100%", background: COLORS.bgInput, border: `1px solid ${COLORS.border}`, borderRadius: 6, color: COLORS.textPrimary, padding: "7px 10px", fontSize: 13 }} />
+    )}
+  </div>
+);
+
+const DramaForm = ({ initial = {}, onSave, onCancel }) => {
+  const db = getDB();
+  const initialCastIds = initial.castIds || (Array.isArray(initial.cast) ? initial.cast.map(n => findPersonByName(db.people, n)?.id).filter(Boolean) : []);
+  const initialDirectorIds = initial.directorIds || String(initial.director || "").split(",").map(n => findPersonByName(db.people, n.trim())?.id).filter(Boolean);
+  const initialWriterIds = initial.writerIds || String(initial.writer || "").split(",").map(n => findPersonByName(db.people, n.trim())?.id).filter(Boolean);
+  const [castIds, setCastIds] = useState(initialCastIds);
+  const [directorIds, setDirectorIds] = useState(initialDirectorIds);
+  const [writerIds, setWriterIds] = useState(initialWriterIds);
+  const [form, setForm] = useState({
+    title: "", urduTitle: "", poster: "", synopsis: "", network: "", year: new Date().getFullYear(), episodes: 1, status: "Ongoing", rating: 7.0, ratingCount: 0, tags: "", genres: [], views: 0, ...initial,
+    tags: Array.isArray(initial.tags) ? initial.tags.join(", ") : (initial.tags || ""),
+    genres: initial.genres || [],
+  });
+
+  const toggleGenre = (g) => setForm(f => ({ ...f, genres: f.genres.includes(g) ? f.genres.filter(x => x !== g) : [...f.genres, g] }));
+
+  const namesFromIds = (ids) => ids.map(id => (db.people || []).find(p => p.id === id)?.name).filter(Boolean);
+
+  const handleSave = () => {
+    if (!form.title) return alert("Title is required");
+    if (castIds.length === 0) return alert("Please select at least one actor from Cast & Crew.");
+    const castNames = namesFromIds(castIds);
+    const directorNames = namesFromIds(directorIds);
+    const writerNames = namesFromIds(writerIds);
+    onSave({
+      ...form,
+      year: parseInt(form.year), episodes: parseInt(form.episodes),
+      rating: parseFloat(form.rating), ratingCount: parseInt(form.ratingCount), views: parseInt(form.views),
+      castIds, directorIds, writerIds,
+      cast: castNames,
+      director: directorNames.join(", "),
+      writer: writerNames.join(", "),
+      tags: String(form.tags || "").split(",").map(s => s.trim()).filter(Boolean),
+    });
+  };
+
+  return (
+    <div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+        <AdminField label="Title (English) *" value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} />
+        <AdminField label="Urdu Title" value={form.urduTitle} onChange={e => setForm({ ...form, urduTitle: e.target.value })} />
+        <AdminField label="Poster URL" value={form.poster} onChange={e => setForm({ ...form, poster: e.target.value })} />
+        <AdminField label="Network" value={form.network} onChange={e => setForm({ ...form, network: e.target.value })} opts={NETWORKS} />
+        <AdminField label="Year" value={form.year} onChange={e => setForm({ ...form, year: e.target.value })} type="number" />
+        <AdminField label="Episodes" value={form.episodes} onChange={e => setForm({ ...form, episodes: e.target.value })} type="number" />
+        <AdminField label="Status" value={form.status} onChange={e => setForm({ ...form, status: e.target.value })} opts={DRAMA_STATUS} />
+        <AdminField label="Rating (0-10)" value={form.rating} onChange={e => setForm({ ...form, rating: e.target.value })} type="number" />
+        <AdminField label="Rating Count" value={form.ratingCount} onChange={e => setForm({ ...form, ratingCount: e.target.value })} type="number" />
+        <AdminField label="Views" value={form.views} onChange={e => setForm({ ...form, views: e.target.value })} type="number" />
+      </div>
+      <AdminField label="Synopsis" value={form.synopsis} onChange={e => setForm({ ...form, synopsis: e.target.value })} ta />
+      <Card style={{ padding: 16, marginBottom: 16, background: COLORS.bgPanel }}>
+        <div style={{ color: COLORS.green4, fontWeight: 700, marginBottom: 12 }}>Cast & Crew from Saved People</div>
+        <MultiPersonPicker label="Actors / Cast" selectedIds={castIds} setSelectedIds={setCastIds} roleFilter="Actor" />
+        <MultiPersonPicker label="Directors" selectedIds={directorIds} setSelectedIds={setDirectorIds} roleFilter="Director" />
+        <MultiPersonPicker label="Writers" selectedIds={writerIds} setSelectedIds={setWriterIds} roleFilter="Writer" />
+        <div style={{ color: COLORS.textMuted, fontSize: 12 }}>Need a person who is not listed? Go to Admin Panel → Add Person first, then come back here.</div>
+      </Card>
+      <AdminField label="Tags (comma separated)" value={form.tags} onChange={e => setForm({ ...form, tags: e.target.value })} />
+      <div style={{ marginBottom: 16 }}>
+        <label style={{ display: "block", fontSize: 12, color: COLORS.textSecondary, marginBottom: 6 }}>Genres</label>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+          {GENRES.map(g => (
+            <span key={g} onClick={() => toggleGenre(g)} className="tag" style={{ background: form.genres.includes(g) ? COLORS.green1 : COLORS.bgPanel, color: form.genres.includes(g) ? "#fff" : COLORS.green4 }}>{g}</span>
+          ))}
+        </div>
+      </div>
+      <div style={{ display: "flex", gap: 10 }}>
+        <Btn onClick={handleSave}>💾 Save Drama</Btn>
+        {onCancel && <Btn variant="ghost" onClick={onCancel}>Cancel</Btn>}
+      </div>
+    </div>
+  );
+};
+
+const AdminAddDrama = ({ onSave }) => (
+  <div>
+    <h2 style={{ fontFamily: "Cinzel", fontSize: 22, color: COLORS.textPrimary, marginBottom: 20 }}>Add New Drama</h2>
+    <Card style={{ padding: 24 }}>
+      <DramaForm onSave={(data) => {
+        const db2 = getDB();
+        db2.dramas.push({ id: genId(), createdAt: Date.now(), ...data });
+        saveDB(db2);
+        onSave();
+      }} />
+    </Card>
+  </div>
+);
+
+const AdminEditDrama = ({ drama, onClose }) => (
+  <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-box fade-in" style={{ maxWidth: 800, maxHeight: "90vh" }} onClick={e => e.stopPropagation()}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+        <h2 style={{ fontFamily: "Cinzel", fontSize: 20, color: COLORS.green3 }}>Edit: {drama.title}</h2>
+        <button onClick={onClose} style={{ background: "none", border: "none", color: COLORS.textMuted, fontSize: 20, cursor: "pointer" }}>✕</button>
+      </div>
+      <DramaForm initial={drama} onSave={(data) => {
+        const db2 = getDB();
+        const idx = db2.dramas.findIndex(d => d.id === drama.id);
+        if (idx > -1) db2.dramas[idx] = { ...db2.dramas[idx], ...data };
+        saveDB(db2); onClose();
+      }} onCancel={onClose} />
+    </div>
+  </div>
+);
+
+
+const PersonField = ({ label, value, onChange, ta = false }) => (
+  <div style={{ marginBottom: 14 }}>
+    <label style={{ display: "block", fontSize: 12, color: COLORS.textSecondary, marginBottom: 4 }}>{label}</label>
+    {ta ? (
+      <textarea
+        value={value || ""}
+        onChange={onChange}
+        rows={3}
+        style={{
+          width: "100%",
+          background: COLORS.bgInput,
+          border: `1px solid ${COLORS.border}`,
+          borderRadius: 6,
+          color: COLORS.textPrimary,
+          padding: "7px 10px",
+          resize: "vertical",
+          fontSize: 13
+        }}
+      />
+    ) : (
+      <input
+        value={value || ""}
+        onChange={onChange}
+        style={{
+          width: "100%",
+          background: COLORS.bgInput,
+          border: `1px solid ${COLORS.border}`,
+          borderRadius: 6,
+          color: COLORS.textPrimary,
+          padding: "7px 10px",
+          fontSize: 13
+        }}
+      />
+    )}
+  </div>
+);
+
+
+const PersonForm = ({ initial = {}, onSave, onCancel }) => {
+  const [form, setForm] = useState({ name: "", photo: "", bio: "", birthYear: "", roles: ["Actor"], knownFor: "", ...initial, knownFor: Array.isArray(initial.knownFor) ? initial.knownFor.join(", ") : (initial.knownFor || "") });
+  const toggleRole = (role) => setForm(f => ({ ...f, roles: f.roles.includes(role) ? f.roles.filter(r => r !== role) : [...f.roles, role] }));
+  const handleSave = () => {
+    if (!form.name.trim()) return alert("Name is required.");
+    if (form.roles.length === 0) return alert("Choose at least one role.");
+    onSave({ ...form, name: form.name.trim(), knownFor: String(form.knownFor || "").split(",").map(s => s.trim()).filter(Boolean) });
+  };
+  
+  return (
+    <div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+        <PersonField label="Name *" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
+        <PersonField label="Photo URL" value={form.photo} onChange={e => setForm({ ...form, photo: e.target.value })} />
+        <PersonField label="Birth Year" value={form.birthYear} onChange={e => setForm({ ...form, birthYear: e.target.value })} />
+        <PersonField label="Known For (comma separated)" value={form.knownFor} onChange={e => setForm({ ...form, knownFor: e.target.value })} />
+      </div>
+      <div style={{ marginBottom: 16 }}>
+        <label style={{ display: "block", fontSize: 12, color: COLORS.textSecondary, marginBottom: 6 }}>Roles</label>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+          {PEOPLE_ROLES.map(role => <span key={role} onClick={() => toggleRole(role)} className="tag" style={{ background: form.roles.includes(role) ? COLORS.green1 : COLORS.bgPanel, color: form.roles.includes(role) ? "#fff" : COLORS.green4 }}>{role}</span>)}
+        </div>
+      </div>
+      <PersonField label="Bio / Description" value={form.bio} onChange={e => setForm({ ...form, bio: e.target.value })} ta />
+      <div style={{ display: "flex", gap: 10 }}>
+        <Btn onClick={handleSave}>💾 Save Person</Btn>
+        {onCancel && <Btn variant="ghost" onClick={onCancel}>Cancel</Btn>}
+      </div>
+    </div>
+  );
+};
+
+const AdminAddPerson = ({ onSave }) => (
+  <div>
+    <h2 style={{ fontFamily: "Cinzel", fontSize: 22, color: COLORS.textPrimary, marginBottom: 20 }}>Add Actor / Director / Writer</h2>
+    <Card style={{ padding: 24 }}>
+      <PersonForm onSave={(data) => {
+        const db2 = getDB();
+        if ((db2.people || []).some(p => p.name.toLowerCase() === data.name.toLowerCase())) return alert("This person already exists.");
+        db2.people = db2.people || [];
+        db2.people.push({ id: genId(), ...data });
+        saveDB(db2);
+        onSave();
+      }} />
+    </Card>
+  </div>
+);
+
+const AdminPeople = ({ db, refresh }) => {
+  const [editing, setEditing] = useState(null);
+  const [search, setSearch] = useState("");
+  const [role, setRole] = useState("");
+  const filtered = (db.people || []).filter(p => (!search || p.name.toLowerCase().includes(search.toLowerCase())) && (!role || (p.roles || []).includes(role)));
+  const deletePerson = (id) => {
+    const used = (db.dramas || []).some(d => (d.castIds || []).includes(id) || (d.directorIds || []).includes(id) || (d.writerIds || []).includes(id));
+    if (used) return alert("This person is already used in a drama. Remove them from dramas first.");
+    if (!window.confirm("Delete this person?")) return;
+    const db2 = getDB();
+    db2.people = (db2.people || []).filter(p => p.id !== id);
+    saveDB(db2); refresh();
+  };
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 20 }}>
+        <h2 style={{ fontFamily: "Cinzel", fontSize: 22, color: COLORS.textPrimary }}>Cast & Crew Library ({(db.people || []).length})</h2>
+        <div style={{ display: "flex", gap: 8 }}>
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search people..." style={{ background: COLORS.bgInput, border: `1px solid ${COLORS.border}`, borderRadius: 6, color: COLORS.textPrimary, padding: "6px 12px", fontSize: 13 }} />
+          <select value={role} onChange={e => setRole(e.target.value)} style={{ background: COLORS.bgInput, border: `1px solid ${COLORS.border}`, borderRadius: 6, color: COLORS.textPrimary, padding: "6px 12px", fontSize: 13 }}>
+            <option value="">All Roles</option>
+            {PEOPLE_ROLES.map(r => <option key={r} value={r}>{r}</option>)}
+          </select>
+        </div>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 14 }}>
+        {filtered.map(p => (
+          <Card key={p.id} style={{ padding: 14 }}>
+            <div style={{ display: "flex", gap: 12 }}>
+              <img src={personPhoto(p)} alt={p.name} style={{ width: 68, height: 68, borderRadius: "50%", objectFit: "cover", border: `1px solid ${COLORS.borderLight}` }} />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 15, color: COLORS.textPrimary, fontWeight: 700 }}>{p.name}</div>
+                <div style={{ margin: "5px 0" }}>{(p.roles || []).map(r => <span key={r} className="badge" style={{ background: COLORS.bgPanel, border: `1px solid ${COLORS.border}`, color: COLORS.green4, marginRight: 4 }}>{r}</span>)}</div>
+                <div style={{ color: COLORS.textMuted, fontSize: 12, lineHeight: 1.4 }}>{p.bio ? p.bio.slice(0, 70) : "No bio yet."}</div>
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+              <Btn size="sm" variant="ghost" onClick={() => setEditing(p)}>✏️ Edit</Btn>
+              <Btn size="sm" variant="danger" onClick={() => deletePerson(p.id)}>🗑️ Delete</Btn>
+            </div>
+          </Card>
+        ))}
+      </div>
+      {editing && <div className="modal-overlay" onClick={() => setEditing(null)}><div className="modal-box fade-in" style={{ maxWidth: 720 }} onClick={e => e.stopPropagation()}><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}><h2 style={{ fontFamily: "Cinzel", fontSize: 20, color: COLORS.green3 }}>Edit: {editing.name}</h2><button onClick={() => setEditing(null)} style={{ background: "none", border: "none", color: COLORS.textMuted, fontSize: 20, cursor: "pointer" }}>✕</button></div><PersonForm initial={editing} onSave={(data) => { const db2 = getDB(); const idx = db2.people.findIndex(p => p.id === editing.id); if (idx > -1) db2.people[idx] = { ...db2.people[idx], ...data }; saveDB(db2); setEditing(null); refresh(); }} onCancel={() => setEditing(null)} /></div></div>}
+    </div>
+  );
+};
+
+const AdminUsers = ({ db, refresh, currentUser }) => {
+  const changeRole = (userId, role) => {
+    const db2 = getDB();
+    const u = db2.users.find(u => u.id === userId);
+    if (u) { u.role = role; saveDB(db2); refresh(); }
+  };
+
+  const deleteUser = (userId) => {
+    if (userId === currentUser.id) return alert("Cannot delete your own account.");
+    if (!window.confirm("Delete this user?")) return;
+    const db2 = getDB();
+    db2.users = db2.users.filter(u => u.id !== userId);
+    saveDB(db2); refresh();
+  };
+
+  return (
+    <div>
+      <h2 style={{ fontFamily: "Cinzel", fontSize: 22, color: COLORS.textPrimary, marginBottom: 20 }}>Manage Users ({db.users.length})</h2>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {db.users.map(u => (
+          <Card key={u.id} style={{ display: "flex", gap: 14, padding: "12px 16px", alignItems: "center" }}>
+            <div style={{ width: 40, height: 40, borderRadius: "50%", background: COLORS.green1, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700 }}>{u.avatar}</div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 14, fontWeight: 600, color: COLORS.textPrimary }}>{u.username} {u.id === currentUser.id && <span style={{ color: COLORS.textMuted, fontSize: 11 }}>(you)</span>}</div>
+              <div style={{ fontSize: 12, color: COLORS.textMuted }}>{u.email} · Joined {u.joinDate}</div>
+              <div style={{ fontSize: 12, color: COLORS.textMuted }}>Watchlist: {(u.watchlist || []).length} · Reviews: {db.reviews.filter(r => r.userId === u.id).length}</div>
+            </div>
+            <select value={u.role} onChange={e => changeRole(u.id, e.target.value)} disabled={u.id === currentUser.id}
+              style={{ background: COLORS.bgInput, border: `1px solid ${COLORS.border}`, borderRadius: 6, color: COLORS.textPrimary, padding: "5px 10px", fontSize: 13 }}>
+              {ROLES.map(r => <option key={r} value={r}>{r}</option>)}
+            </select>
+            <Btn size="sm" variant="danger" onClick={() => deleteUser(u.id)} disabled={u.id === currentUser.id}>🗑️</Btn>
+          </Card>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const AdminReviews = ({ db, refresh }) => {
+  const deleteReview = (id) => {
+    if (!window.confirm("Delete this review?")) return;
+    const db2 = getDB();
+    db2.reviews = db2.reviews.filter(r => r.id !== id);
+    saveDB(db2); refresh();
+  };
+
+  return (
+    <div>
+      <h2 style={{ fontFamily: "Cinzel", fontSize: 22, color: COLORS.textPrimary, marginBottom: 20 }}>Manage Reviews ({db.reviews.length})</h2>
+      {db.reviews.length === 0 ? <div style={{ color: COLORS.textMuted, textAlign: "center", padding: 40 }}>No reviews yet.</div> : db.reviews.map(r => {
+        const drama = db.dramas.find(d => d.id === r.dramaId);
+        return (
+          <Card key={r.id} style={{ padding: 14, marginBottom: 10 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 13, color: COLORS.green3, fontWeight: 600 }}>{drama?.title || "Unknown Drama"}</div>
+                <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 6 }}>by {r.username} · {r.date} · ★ {r.rating}/10</div>
+                <p style={{ fontSize: 13, color: COLORS.textSecondary }}>{r.text}</p>
+              </div>
+              <Btn size="sm" variant="danger" onClick={() => deleteReview(r.id)}>🗑️ Delete</Btn>
+            </div>
+          </Card>
+        );
+      })}
+    </div>
+  );
+};
+
+const AdminNews = ({ db, refresh, user }) => {
+  const [form, setForm] = useState({ title: "", body: "", image: "" });
+  const [editing, setEditing] = useState(null);
+  const [showForm, setShowForm] = useState(false);
+
+  const addNews = () => {
+    if (!form.title || !form.body) return alert("Title and body required.");
+    const db2 = getDB();
+    const article = { id: genId(), ...form, date: new Date().toISOString().slice(0, 10), author: user.username, image: form.image || "https://placehold.co/600x200/1a2a1a/72b884?text=News" };
+    db2.news.push(article);
+    saveDB(db2); refresh();
+    setForm({ title: "", body: "", image: "" });
+    setShowForm(false);
+  };
+
+  const deleteNews = (id) => {
+    if (!window.confirm("Delete article?")) return;
+    const db2 = getDB();
+    db2.news = db2.news.filter(n => n.id !== id);
+    saveDB(db2); refresh();
+  };
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+        <h2 style={{ fontFamily: "Cinzel", fontSize: 22, color: COLORS.textPrimary }}>News Articles ({db.news.length})</h2>
+        <Btn size="sm" onClick={() => setShowForm(!showForm)}>➕ Add Article</Btn>
+      </div>
+      {showForm && (
+        <Card style={{ padding: 20, marginBottom: 20 }}>
+          <Input label="Title" value={form.title} onChange={v => setForm({ ...form, title: v })} />
+          <Input label="Image URL (optional)" value={form.image} onChange={v => setForm({ ...form, image: v })} />
+          <Input label="Content" value={form.body} onChange={v => setForm({ ...form, body: v })} textarea rows={4} />
+          <div style={{ display: "flex", gap: 10 }}><Btn size="sm" onClick={addNews}>Publish</Btn><Btn size="sm" variant="ghost" onClick={() => setShowForm(false)}>Cancel</Btn></div>
+        </Card>
+      )}
+      {db.news.map(n => (
+        <Card key={n.id} style={{ display: "flex", gap: 14, padding: "12px 16px", alignItems: "flex-start", marginBottom: 10 }}>
+          <img src={n.image} alt={n.title} style={{ width: 80, height: 55, objectFit: "cover", borderRadius: 4 }} />
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 14, fontWeight: 600, color: COLORS.textPrimary, marginBottom: 3 }}>{n.title}</div>
+            <div style={{ fontSize: 12, color: COLORS.textMuted }}>by {n.author} · {n.date}</div>
+          </div>
+          <Btn size="sm" variant="danger" onClick={() => deleteNews(n.id)}>🗑️</Btn>
+        </Card>
+      ))}
+    </div>
+  );
+};
+
+const AdminSettings = ({ db, refresh }) => {
+  const [form, setForm] = useState({ ...db.settings });
+  const save = () => {
+    const db2 = getDB();
+    db2.settings = { ...form };
+    saveDB(db2); refresh();
+    alert("Settings saved!");
+  };
+  return (
+    <div>
+      <h2 style={{ fontFamily: "Cinzel", fontSize: 22, color: COLORS.textPrimary, marginBottom: 20 }}>Site Settings</h2>
+      <Card style={{ padding: 24, maxWidth: 500 }}>
+        <Input label="Site Name" value={form.siteName} onChange={v => setForm({ ...form, siteName: v })} />
+        <Input label="Tagline (Urdu)" value={form.tagline} onChange={v => setForm({ ...form, tagline: v })} />
+        <div style={{ marginBottom: 16 }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", fontSize: 13, color: COLORS.textSecondary }}>
+            <input type="checkbox" checked={form.maintenanceMode} onChange={e => setForm({ ...form, maintenanceMode: e.target.checked })} />
+            Maintenance Mode
+          </label>
+        </div>
+        <Btn onClick={save}>💾 Save Settings</Btn>
+      </Card>
+    </div>
+  );
+};
+
+// ─── APP ROOT ─────────────────────────────────────────────────────────────────
+function App() {
+  const [page, setPage] = useState("home");
+  const [user, setUser] = useState(null);
+  const [authMode, setAuthMode] = useState(null);
+
+  const [route, setRoute] = useState({ type: null, item: null });
+
+  useEffect(() => {
+    getDB(); // ensure DB initialized
+    const saved = localStorage.getItem("pakdramalist_session");
+    if (saved) {
+      const db = getDB();
+      const u = db.users.find(u => u.id === saved);
+      if (u) setUser(u);
+    }
+    const syncRoute = () => setRoute(getRouteFromHash());
+    syncRoute();
+    window.addEventListener("hashchange", syncRoute);
+    return () => window.removeEventListener("hashchange", syncRoute);
+  }, []);
+
+  const login = (u) => {
+    setUser(u);
+    localStorage.setItem("pakdramalist_session", u.id);
+    setAuthMode(null);
+  };
+
+  const logout = () => {
+    setUser(null);
+    localStorage.removeItem("pakdramalist_session");
+    window.location.hash = "";
+    setPage("home");
+  };
+
+  const updateUser = (u) => setUser({ ...u });
+
+  const openAuth = (mode) => setAuthMode(mode);
+  const navigatePage = (nextPage) => {
+    if (window.location.hash) window.location.hash = "";
+    setRoute({ type: null, item: null });
+    setPage(nextPage);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const db = getDB();
+  const settings = db.settings || {};
+
+  return (
+    <AuthCtx.Provider value={{ user, login, logout, updateUser }}>
+      <GlobalStyle />
+      {settings.maintenanceMode && user?.role !== "admin" ? (
+        <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 16 }}>
+          <div style={{ fontSize: 60 }}>🔧</div>
+          <div style={{ fontFamily: "Cinzel", fontSize: 28, color: COLORS.green3 }}>Site Under Maintenance</div>
+          <div style={{ color: COLORS.textSecondary }}>We'll be back soon. شکریہ</div>
+        </div>
+      ) : (
+        <>
+          <Navbar page={page} setPage={navigatePage} openAuth={openAuth} />
+          <main>
+            {route.type === "drama" && route.item ? (
+              <DramaPage drama={route.item} setPage={navigatePage} />
+            ) : route.type === "person" && route.item ? (
+              <PersonPage person={route.item} setPage={navigatePage} />
+            ) : route.type === "movie" && route.item ? (
+              <MoviePage movie={route.item} setPage={navigatePage} />
+            ) : (
+              <>
+                {page === "home" && <HomePage setPage={navigatePage} />}
+                {page === "dramas" && <DramasPage />}
+                {page === "movies" && <MoviesPage />}
+                {page === "top" && <TopRatedPage />}
+                {page === "news" && <NewsPage />}
+                {page === "community" && <CommunityPage />}
+                {page === "profile" && <ProfilePage />}
+                {page === "watchlist" && <WatchlistPage />}
+                {page === "admin" && <AdminPanel />}
+              </>
+            )}
+          </main>
+          <footer style={{ background: COLORS.bgCard, borderTop: `1px solid ${COLORS.border}`, padding: "28px 20px", marginTop: 40, textAlign: "center" }}>
+            <div style={{ fontFamily: "Cinzel", fontSize: 18, color: COLORS.green3, marginBottom: 4 }}>{settings.siteName || "PakDramaList"}</div>
+            <div style={{ fontFamily: "Noto Nastaliq Urdu", fontSize: 14, color: COLORS.green4, direction: "rtl", marginBottom: 8 }}>{settings.tagline || "پاکستانی ڈراموں کی دنیا"}</div>
+            <div style={{ color: COLORS.textMuted, fontSize: 12 }}>© 2026 PakDramaList. Pakistani dramas, movies & stars.</div>
+          </footer>
+          {authMode && <AuthModal onClose={() => setAuthMode(null)} onSuccess={login} />}
+        </>
+      )}
+    </AuthCtx.Provider>
+  );
+}
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
