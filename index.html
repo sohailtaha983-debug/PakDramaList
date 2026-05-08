@@ -240,10 +240,14 @@ let __dbCache = null;
 
 const getDB = () => __dbCache || initDB();
 
-const saveDB = (db) => {
+const saveDB = (db, skipFirebase = false) => {
   __dbCache = db;
-  if (!window.__fbdb) return;
-  window.__fbdb.ref("/").set(db).catch(e => console.error("Firebase write error:", e));
+  if (!window.__fbdb || skipFirebase) return;
+  // Debounce writes so rapid updates don't hammer Firebase
+  if (saveDB._timer) clearTimeout(saveDB._timer);
+  saveDB._timer = setTimeout(() => {
+    window.__fbdb.ref("/").set(db).catch(e => console.error("Firebase write error:", e));
+  }, 400);
 };
 
 const patchDB = (path, value) => {
@@ -259,7 +263,15 @@ const personName = (idOrName, db = getDB()) => {
 const personPhoto = (person) => person?.photo || `https://placehold.co/120x120/1a2a1a/72b884?text=${encodeURIComponent((person?.name || "?")[0])}`;
 
 const migrateDB = (db) => {
-  if (!db.people) { db.people = samplePeople; }
+  if (!db) db = {};
+  if (!db.people) db.people = samplePeople;
+  if (!db.dramas) db.dramas = [];
+  if (!db.movies) db.movies = [];
+  if (!db.users) db.users = [];
+  if (!db.reviews) db.reviews = [];
+  if (!db.comments) db.comments = [];
+  if (!db.news) db.news = [];
+  if (!db.settings) db.settings = { siteName: "PakDramaList", tagline: "پاکستانی ڈراموں کی دنیا", maintenanceMode: false };
   db.people = db.people.map(p => ({ knownFor: [], ...p, roles: p.roles || [p.primaryRole || "Actor"] }));
   db.dramas = (db.dramas || []).map(d => {
     const castNames = Array.isArray(d.cast) ? d.cast : String(d.cast || "").split(",").map(x => x.trim()).filter(Boolean);
@@ -332,7 +344,9 @@ const initDB = () => {
     ],
     settings: { siteName: "PakDramaList", tagline: "پاکستانی ڈراموں کی دنیا", maintenanceMode: false },
   };
-  saveDB(db);
+  // Only cache locally — do NOT write to Firebase here.
+  // Firebase seeding happens in App useEffect only when Firebase is empty.
+  __dbCache = db;
   return db;
 };
 
@@ -381,7 +395,7 @@ const getRouteFromHash = () => {
   if (type === "drama") {
     return {
       type: "drama",
-      item: db.dramas.find(d => slugify(d.title) === slug || d.id === slug) || null
+      item: (db.dramas || []).find(d => slugify(d.title) === slug || d.id === slug) || null
     };
   }
 
@@ -504,7 +518,7 @@ const getDramaPeople = (drama, role, db = getDB()) => {
 // ─── DRAMA POSTER CARD ─────────────────────────────────────────────────────────
 const DramaCard = ({ drama, onOpen }) => {
   const db = getDB();
-  const ratings = db.reviews.filter(r => r.dramaId === drama.id).map(r => r.rating);
+  const ratings = (db.reviews || []).filter(r => r.dramaId === drama.id).map(r => r.rating);
   const computedRating = ratings.length > 0 ? parseFloat(avg(ratings)) : drama.rating;
   return (
     <Card onClick={() => onOpen(drama)} style={{ width: 160, flexShrink: 0 }}>
@@ -654,7 +668,7 @@ const DramaModal = ({ drama, onClose }) => {
     }
   }, [drama.id, user]);
 
-  const reviews = db.reviews.filter(r => r.dramaId === drama.id);
+  const reviews = (db.reviews || []).filter(r => r.dramaId === drama.id);
   const avgRating = reviews.length > 0 ? avg(reviews.map(r => r.rating)) : drama.rating;
 
   const handleRate = (val) => {
@@ -852,9 +866,9 @@ const DramaPage = ({ drama, setPage }) => {
     return () => { document.title = "PakDramaList"; };
   }, [drama.id, user]);
 
-  const reviews = db.reviews.filter(r => r.dramaId === drama.id);
+  const reviews = (db.reviews || []).filter(r => r.dramaId === drama.id);
   const avgRating = reviews.length > 0 ? avg(reviews.map(r => r.rating)) : drama.rating;
-  const related = db.dramas.filter(d => d.id !== drama.id && d.genres.some(g => drama.genres.includes(g))).slice(0, 6);
+  const related = (db.dramas || []).filter(d => d.id !== drama.id && d.genres.some(g => drama.genres.includes(g))).slice(0, 6);
 
   const handleRate = (val) => {
     if (!user) return alert("Please login to rate!");
@@ -1187,16 +1201,16 @@ const AuthModal = ({ onClose, onSuccess }) => {
     setErr("");
     const db = getDB();
     if (mode === "login") {
-      const u = db.users.find(u => (u.email === form.email || u.username === form.email) && u.password === form.password);
+      const u = (db.users || []).find(u => (u.email === form.email || u.username === form.email) && u.password === form.password);
       if (!u) return setErr("Invalid credentials.");
       onSuccess(u);
     } else {
       if (!form.username || !form.email || !form.password) return setErr("All fields required.");
       if (form.password !== form.confirm) return setErr("Passwords don't match.");
-      if (db.users.find(u => u.email === form.email)) return setErr("Email already registered.");
-      if (db.users.find(u => u.username === form.username)) return setErr("Username taken.");
+      if ((db.users || []).find(u => u.email === form.email)) return setErr("Email already registered.");
+      if ((db.users || []).find(u => u.username === form.username)) return setErr("Username taken.");
       const newUser = { id: genId(), username: form.username, email: form.email, password: form.password, role: "member", avatar: form.username[0].toUpperCase(), bio: "", joinDate: new Date().toISOString().slice(0, 10), watchlist: [], ratings: {}, reviews: {}, lists: [], following: [], followers: [] };
-      db.users.push(newUser);
+      (db.users || []).push(newUser);
       saveDB(db);
       onSuccess(newUser);
     }
@@ -1241,7 +1255,7 @@ const Navbar = ({ page, setPage, openAuth }) => {
     setSearch(q);
     if (q.length < 2) return setResults([]);
     const db = getDB();
-    setResults(db.dramas.filter(d => d.title.toLowerCase().includes(q.toLowerCase()) || d.urduTitle?.includes(q)).slice(0, 5));
+    setResults((db.dramas || []).filter(d => d.title.toLowerCase().includes(q.toLowerCase()) || d.urduTitle?.includes(q)).slice(0, 5));
   };
 
   const navLinks = [
@@ -1387,7 +1401,8 @@ const Navbar = ({ page, setPage, openAuth }) => {
 const HomePage = ({ setPage }) => {
   const db = getDB();
   const [selectedDrama, setSelectedDrama] = useState(null);
-  const featured = db.dramas.slice(0, 1)[0];
+  if (!db || !db.dramas) return <div style={{ color: "#c5e8cf", padding: 60, textAlign: "center", fontSize: 18 }}>Loading dramas...</div>;
+  const featured = (db.dramas || []).slice(0, 1)[0];
   const trending = [...db.dramas].sort((a, b) => b.views - a.views).slice(0, 8);
   const topRated = [...db.dramas].sort((a, b) => b.rating - a.rating).slice(0, 8);
   const recent = [...db.dramas].sort((a, b) => b.createdAt - a.createdAt).slice(0, 8);
@@ -1425,7 +1440,7 @@ const HomePage = ({ setPage }) => {
       <div style={{ maxWidth: 1200, margin: "0 auto", padding: "0 20px" }}>
         {/* Stats Bar */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 16, marginBottom: 40 }}>
-          {[{ label: "Total Dramas", value: db.dramas.length, icon: "🎬" }, { label: "Members", value: fmtNum(db.users.length), icon: "👥" }, { label: "Reviews", value: db.reviews.length, icon: "📝" }, { label: "Total Views", value: fmtNum(db.dramas.reduce((a, d) => a + d.views, 0)), icon: "👁" }].map(s => (
+          {[{ label: "Total Dramas", value: (db.dramas || []).length, icon: "🎬" }, { label: "Members", value: fmtNum((db.users || []).length), icon: "👥" }, { label: "Reviews", value: (db.reviews || []).length, icon: "📝" }, { label: "Total Views", value: fmtNum((db.dramas || []).reduce((a, d) => a + d.views, 0)), icon: "👁" }].map(s => (
             <Card key={s.label} style={{ padding: 16, textAlign: "center" }}>
               <div style={{ fontSize: 28, marginBottom: 4 }}>{s.icon}</div>
               <div style={{ fontFamily: "Cinzel", fontSize: 22, color: COLORS.green3, fontWeight: 700 }}>{s.value}</div>
@@ -1480,7 +1495,7 @@ const HomePage = ({ setPage }) => {
         <div style={{ marginBottom: 40 }}>
           <h2 style={{ fontFamily: "Cinzel", fontSize: 20, color: COLORS.textPrimary, marginBottom: 16 }}>📰 Latest News</h2>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 16 }}>
-            {db.news.slice(0, 4).map(n => (
+            {(db.news || []).slice(0, 4).map(n => (
               <Card key={n.id}>
                 <img src={n.image} alt={n.title} style={{ width: "100%", height: 140, objectFit: "cover" }} />
                 <div style={{ padding: 14 }}>
@@ -1510,7 +1525,7 @@ const DramasPage = () => {
   const [sortBy, setSortBy] = useState("rating");
   const [viewMode, setViewMode] = useState("grid");
 
-  const years = [...new Set(db.dramas.map(d => d.year))].sort((a, b) => b - a);
+  const years = [...new Set((db.dramas || []).map(d => d.year))].sort((a, b) => b - a);
 
   let filtered = db.dramas
     .filter(d => !search || d.title.toLowerCase().includes(search.toLowerCase()))
@@ -1636,7 +1651,7 @@ const NewsPage = () => {
         </div>
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 20 }}>
-          {db.news.map(n => (
+          {(db.news || []).map(n => (
             <Card key={n.id} onClick={() => setSelected(n)}>
               <img src={n.image} alt={n.title} style={{ width: "100%", height: 160, objectFit: "cover" }} />
               <div style={{ padding: 16 }}>
@@ -1657,7 +1672,7 @@ const NewsPage = () => {
 const CommunityPage = () => {
   const db = getDB();
   const { user } = useAuth();
-  const topReviewers = db.users.map(u => ({ ...u, reviewCount: db.reviews.filter(r => r.userId === u.id).length })).sort((a, b) => b.reviewCount - a.reviewCount).slice(0, 10);
+  const topReviewers = (db.users || []).map(u => ({ ...u, reviewCount: (db.reviews || []).filter(r => r.userId === u.id).length })).sort((a, b) => b.reviewCount - a.reviewCount).slice(0, 10);
   const recentReviews = [...db.reviews].sort((a, b) => b.date > a.date ? 1 : -1).slice(0, 10);
 
   return (
@@ -1683,7 +1698,7 @@ const CommunityPage = () => {
           {recentReviews.length === 0 ? (
             <div style={{ color: COLORS.textMuted, textAlign: "center", padding: 40 }}>No reviews yet. Be the first to review!</div>
           ) : recentReviews.map(r => {
-            const drama = db.dramas.find(d => d.id === r.dramaId);
+            const drama = (db.dramas || []).find(d => d.id === r.dramaId);
             return (
               <Card key={r.id} style={{ padding: "10px 14px", marginBottom: 10 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
@@ -1714,8 +1729,8 @@ const ProfilePage = () => {
   if (!user) return <div style={{ textAlign: "center", padding: 60, color: COLORS.textMuted }}>Please sign in to view your profile.</div>;
 
   const db = getDB();
-  const userReviews = db.reviews.filter(r => r.userId === user.id);
-  const watchlist = (user.watchlist || []).map(w => ({ ...w, drama: db.dramas.find(d => d.id === w.dramaId) })).filter(w => w.drama);
+  const userReviews = (db.reviews || []).filter(r => r.userId === user.id);
+  const watchlist = (user.watchlist || []).map(w => ({ ...w, drama: (db.dramas || []).find(d => d.id === w.dramaId) })).filter(w => w.drama);
 
   const save = () => {
     const db2 = getDB();
@@ -1789,7 +1804,7 @@ const ProfilePage = () => {
         <div>
           <h2 style={{ fontFamily: "Cinzel", fontSize: 18, color: COLORS.textPrimary, marginBottom: 16 }}>My Reviews</h2>
           {userReviews.map(r => {
-            const drama = db.dramas.find(d => d.id === r.dramaId);
+            const drama = (db.dramas || []).find(d => d.id === r.dramaId);
             return (
               <Card key={r.id} style={{ padding: 14, marginBottom: 10 }}>
                 <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
@@ -1820,7 +1835,7 @@ const WatchlistPage = () => {
   if (!user) return <div style={{ textAlign: "center", padding: 60, color: COLORS.textMuted }}>Please sign in to view your watchlist.</div>;
 
   const db = getDB();
-  const watchlist = (user.watchlist || []).map(w => ({ ...w, drama: db.dramas.find(d => d.id === w.dramaId) })).filter(w => w.drama);
+  const watchlist = (user.watchlist || []).map(w => ({ ...w, drama: (db.dramas || []).find(d => d.id === w.dramaId) })).filter(w => w.drama);
 
   return (
     <div className="fade-in" style={{ maxWidth: 900, margin: "0 auto", padding: "28px 20px" }}>
@@ -1960,11 +1975,11 @@ const AdminPanel = () => {
 
 const AdminDashboard = ({ db }) => {
   const stats = [
-    { label: "Total Dramas", value: db.dramas.length, icon: "🎬", color: COLORS.green3 },
+    { label: "Total Dramas", value: (db.dramas || []).length, icon: "🎬", color: COLORS.green3 },
     { label: "Cast & Crew", value: (db.people || []).length, icon: "🎭", color: COLORS.green4 },
-    { label: "Total Users", value: db.users.length, icon: "👥", color: COLORS.gold },
-    { label: "Total Reviews", value: db.reviews.length, icon: "💬", color: COLORS.green4 },
-    { label: "News Articles", value: db.news.length, icon: "📰", color: COLORS.goldLight },
+    { label: "Total Users", value: (db.users || []).length, icon: "👥", color: COLORS.gold },
+    { label: "Total Reviews", value: (db.reviews || []).length, icon: "💬", color: COLORS.green4 },
+    { label: "News Articles", value: (db.news || []).length, icon: "📰", color: COLORS.goldLight },
   ];
   return (
     <div>
@@ -1994,7 +2009,7 @@ const AdminDashboard = ({ db }) => {
         </Card>
         <Card style={{ padding: 20 }}>
           <h3 style={{ fontSize: 15, color: COLORS.green4, marginBottom: 14 }}>Recent Users</h3>
-          {db.users.slice(-5).reverse().map(u => (
+          {(db.users || []).slice(-5).reverse().map(u => (
             <div key={u.id} style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 10 }}>
               <div style={{ width: 32, height: 32, borderRadius: "50%", background: COLORS.green1, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700 }}>{u.avatar}</div>
               <div style={{ flex: 1 }}>
@@ -2013,7 +2028,7 @@ const AdminDashboard = ({ db }) => {
 const AdminDramas = ({ db, refresh }) => {
   const [editing, setEditing] = useState(null);
   const [search, setSearch] = useState("");
-  const filtered = db.dramas.filter(d => !search || d.title.toLowerCase().includes(search.toLowerCase()));
+  const filtered = (db.dramas || []).filter(d => !search || d.title.toLowerCase().includes(search.toLowerCase()));
 
   const deleteDrama = (id) => {
     if (!window.confirm("Delete this drama?")) return;
@@ -2025,7 +2040,7 @@ const AdminDramas = ({ db, refresh }) => {
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-        <h2 style={{ fontFamily: "Cinzel", fontSize: 22, color: COLORS.textPrimary }}>Manage Dramas ({db.dramas.length})</h2>
+        <h2 style={{ fontFamily: "Cinzel", fontSize: 22, color: COLORS.textPrimary }}>Manage Dramas ({(db.dramas || []).length})</h2>
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search..." style={{ background: COLORS.bgInput, border: `1px solid ${COLORS.border}`, borderRadius: 6, color: COLORS.textPrimary, padding: "6px 12px", fontSize: 13 }} />
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -2361,15 +2376,15 @@ const AdminUsers = ({ db, refresh, currentUser }) => {
 
   return (
     <div>
-      <h2 style={{ fontFamily: "Cinzel", fontSize: 22, color: COLORS.textPrimary, marginBottom: 20 }}>Manage Users ({db.users.length})</h2>
+      <h2 style={{ fontFamily: "Cinzel", fontSize: 22, color: COLORS.textPrimary, marginBottom: 20 }}>Manage Users ({(db.users || []).length})</h2>
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        {db.users.map(u => (
+        {(db.users || []).map(u => (
           <Card key={u.id} style={{ display: "flex", gap: 14, padding: "12px 16px", alignItems: "center" }}>
             <div style={{ width: 40, height: 40, borderRadius: "50%", background: COLORS.green1, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700 }}>{u.avatar}</div>
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 14, fontWeight: 600, color: COLORS.textPrimary }}>{u.username} {u.id === currentUser.id && <span style={{ color: COLORS.textMuted, fontSize: 11 }}>(you)</span>}</div>
               <div style={{ fontSize: 12, color: COLORS.textMuted }}>{u.email} · Joined {u.joinDate}</div>
-              <div style={{ fontSize: 12, color: COLORS.textMuted }}>Watchlist: {(u.watchlist || []).length} · Reviews: {db.reviews.filter(r => r.userId === u.id).length}</div>
+              <div style={{ fontSize: 12, color: COLORS.textMuted }}>Watchlist: {(u.watchlist || []).length} · Reviews: {(db.reviews || []).filter(r => r.userId === u.id).length}</div>
             </div>
             <select value={u.role} onChange={e => changeRole(u.id, e.target.value)} disabled={u.id === currentUser.id}
               style={{ background: COLORS.bgInput, border: `1px solid ${COLORS.border}`, borderRadius: 6, color: COLORS.textPrimary, padding: "5px 10px", fontSize: 13 }}>
@@ -2393,9 +2408,9 @@ const AdminReviews = ({ db, refresh }) => {
 
   return (
     <div>
-      <h2 style={{ fontFamily: "Cinzel", fontSize: 22, color: COLORS.textPrimary, marginBottom: 20 }}>Manage Reviews ({db.reviews.length})</h2>
-      {db.reviews.length === 0 ? <div style={{ color: COLORS.textMuted, textAlign: "center", padding: 40 }}>No reviews yet.</div> : db.reviews.map(r => {
-        const drama = db.dramas.find(d => d.id === r.dramaId);
+      <h2 style={{ fontFamily: "Cinzel", fontSize: 22, color: COLORS.textPrimary, marginBottom: 20 }}>Manage Reviews ({(db.reviews || []).length})</h2>
+      {(db.reviews || []).length === 0 ? <div style={{ color: COLORS.textMuted, textAlign: "center", padding: 40 }}>No reviews yet.</div> : (db.reviews || []).map(r => {
+        const drama = (db.dramas || []).find(d => d.id === r.dramaId);
         return (
           <Card key={r.id} style={{ padding: 14, marginBottom: 10 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
@@ -2438,7 +2453,7 @@ const AdminNews = ({ db, refresh, user }) => {
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-        <h2 style={{ fontFamily: "Cinzel", fontSize: 22, color: COLORS.textPrimary }}>News Articles ({db.news.length})</h2>
+        <h2 style={{ fontFamily: "Cinzel", fontSize: 22, color: COLORS.textPrimary }}>News Articles ({(db.news || []).length})</h2>
         <Btn size="sm" onClick={() => setShowForm(!showForm)}>➕ Add Article</Btn>
       </div>
       {showForm && (
@@ -2449,7 +2464,7 @@ const AdminNews = ({ db, refresh, user }) => {
           <div style={{ display: "flex", gap: 10 }}><Btn size="sm" onClick={addNews}>Publish</Btn><Btn size="sm" variant="ghost" onClick={() => setShowForm(false)}>Cancel</Btn></div>
         </Card>
       )}
-      {db.news.map(n => (
+      {(db.news || []).map(n => (
         <Card key={n.id} style={{ display: "flex", gap: 14, padding: "12px 16px", alignItems: "flex-start", marginBottom: 10 }}>
           <img src={n.image} alt={n.title} style={{ width: 80, height: 55, objectFit: "cover", borderRadius: 4 }} />
           <div style={{ flex: 1 }}>
