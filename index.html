@@ -264,21 +264,45 @@ const personName = (idOrName, db = getDB()) => {
 };
 const personPhoto = (person) => person?.photo || `https://placehold.co/120x120/1a2a1a/72b884?text=${encodeURIComponent((person?.name || "?")[0])}`;
 
+// Firebase stores arrays as objects when keys are non-sequential - convert back to arrays
+const toArray = (val) => {
+  if (!val) return [];
+  if (Array.isArray(val)) return val;
+  return Object.values(val);
+};
+
 const migrateDB = (db) => {
   if (!db) db = {};
-  if (!db.people) db.people = samplePeople;
-  if (!db.dramas) db.dramas = [];
-  if (!db.movies) db.movies = [];
-  if (!db.users) db.users = [];
-  if (!db.reviews) db.reviews = [];
-  if (!db.comments) db.comments = [];
-  if (!db.news) db.news = [];
+  // Convert any Firebase objects back to arrays
+  db.dramas = toArray(db.dramas);
+  db.movies = toArray(db.movies);
+  db.reviews = toArray(db.reviews);
+  db.comments = toArray(db.comments);
+  db.news = toArray(db.news);
+  db.people = toArray(db.people);
+  // Users stored by UID as object keys in Firebase - convert to array
+  if (db.users && !Array.isArray(db.users)) {
+    db.users = Object.entries(db.users).map(([uid, u]) => ({ ...u, id: uid }));
+  } else {
+    db.users = toArray(db.users);
+  }
+  // Fix each user's watchlist and followers/following which may also be objects
+  db.users = db.users.map(u => ({
+    ...u,
+    watchlist: toArray(u.watchlist),
+    following: toArray(u.following),
+    followers: toArray(u.followers),
+    lists: toArray(u.lists),
+    ratings: u.ratings || {},
+  }));
+  if (!db.people.length) db.people = samplePeople;
+  if (!db.news.length) db.news = [];
   if (!db.settings) db.settings = { siteName: "PakDramaList", tagline: "پاکستانی ڈراموں کی دنیا", maintenanceMode: false };
   // Remove old hardcoded demo accounts if they still exist in Firebase
   const OLD_DEMO_EMAILS = ["admin@pkdramalist.com", "user@test.com"];
   db.users = db.users.filter(u => !OLD_DEMO_EMAILS.includes(u.email));
   db.people = db.people.map(p => ({ knownFor: [], ...p, roles: p.roles || [p.primaryRole || "Actor"] }));
-  db.dramas = (db.dramas || []).map(d => {
+  db.dramas = db.dramas.map(d => {
     const castNames = Array.isArray(d.cast) ? d.cast : String(d.cast || "").split(",").map(x => x.trim()).filter(Boolean);
     const castIds = d.castIds || castNames.map(n => findPersonByName(db.people, n)?.id).filter(Boolean);
     const directorNames = Array.isArray(d.directors) ? d.directors : String(d.director || "").split(",").map(x => x.trim()).filter(Boolean);
@@ -677,8 +701,8 @@ const DramaModal = ({ drama, onClose }) => {
     if (!user) return alert("Please login to rate!");
     setRating(val);
     const db2 = getDB();
-    const u = db2.users.find(u => u.id === user.id);
-    if (u) { u.ratings = { ...u.ratings, [drama.id]: val }; saveDB(db2); updateUser(u); }
+    const u = (db2.users || []).find(u => u.id === user.id);
+    if (u) { u.ratings = { ...u.ratings, [drama.id]: val }; patchDB(`users/${user.id}/ratings`, u.ratings); __dbCache = db2; updateUser(u); }
   };
 
   const handleReview = () => {
@@ -686,10 +710,9 @@ const DramaModal = ({ drama, onClose }) => {
     if (!rating) return alert("Please give a rating first.");
     if (!review.trim()) return alert("Please write a review.");
     const db2 = getDB();
-    const existing = db2.reviews.findIndex(r => r.dramaId === drama.id && r.userId === user.id);
+    const existing = (db2.reviews || []).findIndex(r => r.dramaId === drama.id && r.userId === user.id);
     const rev = { id: genId(), dramaId: drama.id, userId: user.id, username: user.username, rating, text: review.trim(), date: new Date().toISOString().slice(0, 10), likes: 0 };
-    if (existing > -1) db2.reviews[existing] = rev; else db2.reviews.push(rev);
-    saveDB(db2);
+    if (!db2.reviews) db2.reviews = []; if (existing > -1) db2.reviews[existing] = rev; else db2.reviews.push(rev); patchDB(`reviews/${rev.id}`, rev); __dbCache = db2;
     setReview("");
     alert("Review submitted!");
   };
@@ -698,13 +721,13 @@ const DramaModal = ({ drama, onClose }) => {
     if (!user) return alert("Please login!");
     setWatchStatus(status);
     const db2 = getDB();
-    const u = db2.users.find(u => u.id === user.id);
+    const u = (db2.users || []).find(u => u.id === user.id);
     if (!u) return;
     u.watchlist = u.watchlist || [];
     const idx = u.watchlist.findIndex(w => w.dramaId === drama.id);
     if (status === "none") { if (idx > -1) u.watchlist.splice(idx, 1); }
     else { const entry = { dramaId: drama.id, status, addedAt: Date.now() }; if (idx > -1) u.watchlist[idx] = entry; else u.watchlist.push(entry); }
-    saveDB(db2); updateUser(u);
+    patchDB(`users/${user.id}/watchlist`, u.watchlist); __dbCache = db2; updateUser(u);
   };
 
   const WATCH_STATUSES = [
@@ -876,8 +899,8 @@ const DramaPage = ({ drama, setPage }) => {
     if (!user) return alert("Please login to rate!");
     setRating(val);
     const db2 = getDB();
-    const u = db2.users.find(u => u.id === user.id);
-    if (u) { u.ratings = { ...u.ratings, [drama.id]: val }; saveDB(db2); updateUser(u); }
+    const u = (db2.users || []).find(u => u.id === user.id);
+    if (u) { u.ratings = { ...u.ratings, [drama.id]: val }; patchDB(`users/${user.id}/ratings`, u.ratings); __dbCache = db2; updateUser(u); }
   };
 
   const handleReview = () => {
@@ -885,10 +908,9 @@ const DramaPage = ({ drama, setPage }) => {
     if (!rating) return alert("Please give a rating first.");
     if (!review.trim()) return alert("Please write a review.");
     const db2 = getDB();
-    const existing = db2.reviews.findIndex(r => r.dramaId === drama.id && r.userId === user.id);
+    const existing = (db2.reviews || []).findIndex(r => r.dramaId === drama.id && r.userId === user.id);
     const rev = { id: genId(), dramaId: drama.id, userId: user.id, username: user.username, rating, text: review.trim(), date: new Date().toISOString().slice(0, 10), likes: 0 };
-    if (existing > -1) db2.reviews[existing] = rev; else db2.reviews.push(rev);
-    saveDB(db2);
+    if (!db2.reviews) db2.reviews = []; if (existing > -1) db2.reviews[existing] = rev; else db2.reviews.push(rev); patchDB(`reviews/${rev.id}`, rev); __dbCache = db2;
     setReview("");
     alert("Review submitted!");
   };
@@ -897,13 +919,13 @@ const DramaPage = ({ drama, setPage }) => {
     if (!user) return alert("Please login!");
     setWatchStatus(status);
     const db2 = getDB();
-    const u = db2.users.find(u => u.id === user.id);
+    const u = (db2.users || []).find(u => u.id === user.id);
     if (!u) return;
     u.watchlist = u.watchlist || [];
     const idx = u.watchlist.findIndex(w => w.dramaId === drama.id);
     if (status === "none") { if (idx > -1) u.watchlist.splice(idx, 1); }
     else { const entry = { dramaId: drama.id, status, addedAt: Date.now() }; if (idx > -1) u.watchlist[idx] = entry; else u.watchlist.push(entry); }
-    saveDB(db2); updateUser(u);
+    patchDB(`users/${user.id}/watchlist`, u.watchlist); __dbCache = db2; updateUser(u);
   };
 
   const WATCH_STATUSES = [
@@ -1018,7 +1040,8 @@ const CommentsSection = ({ dramaId }) => {
       text: text.trim(), date: new Date().toISOString(), likes: [],
       parentId: null, edited: false,
     });
-    saveDB(db2);
+    const newC1 = db2.comments[db2.comments.length-1];
+    patchDB(`comments/${newC1.id}`, newC1); __dbCache = db2;
     setText("");
     loadComments();
   };
@@ -1033,7 +1056,8 @@ const CommentsSection = ({ dramaId }) => {
       text: replyText.trim(), date: new Date().toISOString(), likes: [],
       parentId, edited: false,
     });
-    saveDB(db2);
+    const newC2 = db2.comments[db2.comments.length-1];
+    patchDB(`comments/${newC2.id}`, newC2); __dbCache = db2;
     setReplyText("");
     setReplyTo(null);
     loadComments();
@@ -1047,7 +1071,7 @@ const CommentsSection = ({ dramaId }) => {
     const idx = c.likes.indexOf(user.id);
     if (idx > -1) c.likes.splice(idx, 1);
     else c.likes.push(user.id);
-    saveDB(db2);
+    patchDB(`comments/${commentId}/likes`, c.likes); __dbCache = db2;
     loadComments();
   };
 
@@ -1055,8 +1079,10 @@ const CommentsSection = ({ dramaId }) => {
     if (!window.confirm("Delete this comment?")) return;
     const db2 = getDB();
     // Also delete all replies to this comment
+    const toDelete = (db2.comments || []).filter(c => c.id === commentId || c.parentId === commentId);
+    toDelete.forEach(c => window.__fbdb && window.__fbdb.ref(`comments/${c.id}`).remove());
     db2.comments = (db2.comments || []).filter(c => c.id !== commentId && c.parentId !== commentId);
-    saveDB(db2);
+    __dbCache = db2;
     loadComments();
   };
 
@@ -1203,7 +1229,7 @@ const loadOrCreateProfile = async (firebaseUser, extraData = {}) => {
   let profile = (db.users || []).find(u => u.id === uid);
   if (!profile) {
     // First ever user becomes admin
-    const isFirstUser = (db.users || []).length === 0;
+    const isFirstUser = (db.users || []).filter(u => u.role === "admin").length === 0;
     profile = {
       id: uid,
       username: extraData.username || firebaseUser.displayName || firebaseUser.email.split("@")[0],
@@ -1220,7 +1246,9 @@ const loadOrCreateProfile = async (firebaseUser, extraData = {}) => {
     };
     if (!db.users) db.users = [];
     db.users.push(profile);
-    saveDB(db);
+    // Save user directly to their UID path in Firebase
+    if (window.__fbdb) window.__fbdb.ref(`users/${uid}`).set(profile).catch(e => console.error(e));
+    __dbCache = db;
   }
   return profile;
 };
@@ -1825,8 +1853,8 @@ const ProfilePage = () => {
 
   const save = () => {
     const db2 = getDB();
-    const u = db2.users.find(u => u.id === user.id);
-    if (u) { u.bio = bio; saveDB(db2); updateUser(u); }
+    const u = (db2.users || []).find(u => u.id === user.id);
+    if (u) { u.bio = bio; patchDB(`users/${user.id}/bio`, bio); __dbCache = db2; updateUser(u); }
     setEditing(false);
   };
 
@@ -2453,7 +2481,7 @@ const AdminPeople = ({ db, refresh }) => {
 const AdminUsers = ({ db, refresh, currentUser }) => {
   const changeRole = (userId, role) => {
     const db2 = getDB();
-    const u = db2.users.find(u => u.id === userId);
+    const u = (db2.users || []).find(u => u.id === userId);
     if (u) { u.role = role; saveDB(db2); refresh(); }
   };
 
@@ -2603,6 +2631,7 @@ function App() {
   const [route, setRoute] = useState({ type: null, item: null });
   const [dbReady, setDbReady] = useState(false);
   const [dbError, setDbError] = useState(null);
+  const [, setDbTick] = useState(0);
 
   useEffect(() => {
     const syncRoute = () => setRoute(getRouteFromHash());
@@ -2620,6 +2649,7 @@ function App() {
           window.__fbdb.ref("/").set(__dbCache).catch(e => console.error("Seed error:", e));
         } else {
           __dbCache = migrateDB(data);
+          setDbTick(t => t + 1);
         }
         setDbReady(true);
       }, (error) => {
@@ -2636,12 +2666,16 @@ function App() {
     if (window.__fbauth) {
       window.__fbauth.onAuthStateChanged(async (firebaseUser) => {
         if (firebaseUser) {
-          // Wait a tick for DB to be ready
-          setTimeout(() => {
+          // Try immediately, then retry after DB loads from Firebase
+          const tryLoad = () => {
             const db = getDB();
             const profile = (db.users || []).find(u => u.id === firebaseUser.uid);
-            if (profile) setUser(profile);
-          }, 1000);
+            if (profile) { setUser(profile); return true; }
+            return false;
+          };
+          if (!tryLoad()) {
+            setTimeout(() => { if (!tryLoad()) setTimeout(tryLoad, 2000); }, 1000);
+          }
         } else {
           setUser(null);
         }
