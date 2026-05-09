@@ -295,13 +295,17 @@ const migrateDB = (db) => {
     lists: toArray(u.lists),
     ratings: u.ratings || {},
   }));
-  if (!db.people.length) db.people = samplePeople;
+  if (!db.people.length) db.people = [];
   if (!db.news.length) db.news = [];
-  if (!db.settings) db.settings = { siteName: "PakDramaList", tagline: "پاکستانی ڈراموں کی دنیا", maintenanceMode: false };
+  if (!db.settings) db.settings = { siteName: "PakDramaList", tagline: "", maintenanceMode: false, featuredDramaId: "" };
+  if (db.settings.featuredDramaId === undefined) db.settings.featuredDramaId = "";
   // Remove old hardcoded demo accounts if they still exist in Firebase
   const OLD_DEMO_EMAILS = ["admin@pkdramalist.com", "user@test.com"];
   db.users = db.users.filter(u => !OLD_DEMO_EMAILS.includes(u.email));
   db.people = db.people.map(p => ({ knownFor: [], ...p, roles: p.roles || [p.primaryRole || "Actor"] }));
+  // REAL_DATA_CLEANED: prototype ratings are ignored; ratings come from user reviews only.
+  db.dramas = db.dramas.map(d => ({ ...d, rating: 0, ratingCount: 0 }));
+  db.movies = db.movies.map(m => ({ ...m, rating: 0, ratingCount: 0 }));
   db.dramas = db.dramas.map(d => {
     const castNames = Array.isArray(d.cast) ? d.cast : String(d.cast || "").split(",").map(x => x.trim()).filter(Boolean);
     const castIds = d.castIds || castNames.map(n => findPersonByName(db.people, n)?.id).filter(Boolean);
@@ -359,19 +363,19 @@ const sampleDramas = [
 const initDB = () => {
   const db = {
     users: [],
-    dramas: sampleDramas,
-    movies: sampleMovies,
-    people: samplePeople,
+    dramas: [],
+    movies: [],
+    people: [],
     reviews: [],
     comments: [],
-    news: [
-      { id: "n1", title: "Ishq Murshid Sets New Rating Records", body: "The hit drama Ishq Murshid has broken all previous ratings records on Hum TV, achieving a massive 17.9 TVR in its finale.", date: "2024-04-02", author: "admin", image: "https://placehold.co/600x200/1a2a1a/72b884?text=News+Image" },
-      { id: "n2", title: "Fahad Mustafa & Hania Amir to Reunite", body: "The beloved on-screen pair from Kabhi Main Kabhi Tum are reportedly set to star in another project together.", date: "2024-05-10", author: "admin", image: "https://placehold.co/600x200/152015/5c9e6e?text=News+Image" },
-    ],
-    settings: { siteName: "PakDramaList", tagline: "پاکستانی ڈراموں کی دنیا", maintenanceMode: false },
+    news: [],
+    settings: {
+      siteName: "PakDramaList",
+      tagline: "",
+      maintenanceMode: false,
+      featuredDramaId: ""
+    },
   };
-  // Only cache locally — do NOT write to Firebase here.
-  // Firebase seeding happens in App useEffect only when Firebase is empty.
   __dbCache = db;
   return db;
 };
@@ -384,6 +388,29 @@ const useAuth = () => useContext(AuthCtx);
 const avg = (arr) => arr.length ? (arr.reduce((a, b) => a + b, 0) / arr.length).toFixed(1) : "N/A";
 const fmtNum = (n) => n >= 1000 ? (n / 1000).toFixed(1) + "k" : n;
 const genId = () => Math.random().toString(36).slice(2, 10);
+
+const getItemRatings = (itemId, db = getDB()) => (db.reviews || [])
+  .filter(r => r.dramaId === itemId || r.movieId === itemId || r.itemId === itemId)
+  .map(r => Number(r.rating))
+  .filter(n => !isNaN(n) && n > 0);
+
+const getRealRating = (itemId, db = getDB()) => {
+  const ratings = getItemRatings(itemId, db);
+  return ratings.length ? parseFloat(avg(ratings)) : null;
+};
+
+const getRatingCount = (itemId, db = getDB()) => getItemRatings(itemId, db).length;
+
+const ratingLabel = (itemId, db = getDB()) => {
+  const rating = getRealRating(itemId, db);
+  return rating === null ? "Not rated" : "★ " + rating;
+};
+
+const ratingCountLabel = (itemId, db = getDB()) => {
+  const count = getRatingCount(itemId, db);
+  return count + " rating" + (count === 1 ? "" : "s");
+};
+
 
 const dramaSlug = (title) => (title || "").toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 
@@ -541,17 +568,38 @@ const getDramaPeople = (drama, role, db = getDB()) => {
   return (fallback || []).map(n => { const name = String(n).trim(); return findPersonByName(db.people || [], name) || { id: name, name, roles: [role], photo: "" }; }).filter(p => p.name);
 };
 
+
+const deleteDramaEverywhere = (dramaId) => {
+  const db = getDB();
+  db.dramas = (db.dramas || []).filter(d => d.id !== dramaId);
+  db.reviews = (db.reviews || []).filter(r => r.dramaId !== dramaId);
+  db.comments = (db.comments || []).filter(c => c.dramaId !== dramaId);
+  db.users = (db.users || []).map(u => ({
+    ...u,
+    watchlist: (u.watchlist || []).filter(w => w.dramaId !== dramaId),
+    ratings: Object.fromEntries(Object.entries(u.ratings || {}).filter(([k]) => k !== dramaId))
+  }));
+  if (db.settings?.featuredDramaId === dramaId) db.settings.featuredDramaId = "";
+  saveDB(db);
+};
+
+const deleteMovieEverywhere = (movieId) => {
+  const db = getDB();
+  db.movies = (db.movies || []).filter(m => m.id !== movieId);
+  db.reviews = (db.reviews || []).filter(r => r.movieId !== movieId && r.itemId !== movieId);
+  saveDB(db);
+};
+
 // ─── DRAMA POSTER CARD ─────────────────────────────────────────────────────────
 const DramaCard = ({ drama, onOpen }) => {
   const db = getDB();
-  const ratings = (db.reviews || []).filter(r => r.dramaId === drama.id).map(r => r.rating);
-  const computedRating = ratings.length > 0 ? parseFloat(avg(ratings)) : drama.rating;
+  const computedRating = getRealRating(drama.id, db);
   return (
     <Card onClick={() => onOpen(drama)} style={{ width: 160, flexShrink: 0 }}>
       <div style={{ position: "relative" }}>
         <img src={drama.poster} alt={drama.title} style={{ width: "100%", height: 220, objectFit: "cover", display: "block" }} />
         <div style={{ position: "absolute", top: 6, right: 6, background: "rgba(0,0,0,0.75)", borderRadius: 4, padding: "2px 7px", fontSize: 13, fontWeight: 700, color: COLORS.starFilled }}>
-          ★ {computedRating}
+          {computedRating === null ? "Not rated" : "★ " + computedRating}
         </div>
         <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, background: "linear-gradient(transparent, rgba(0,0,0,0.9))", padding: "20px 8px 6px" }}>
           <span className="badge" style={{ background: drama.status === "Completed" ? COLORS.green1 : drama.status === "Ongoing" ? "#c9a84c" : COLORS.bgPanel, color: "#fff", fontSize: 10 }}>{drama.status}</span>
@@ -568,13 +616,14 @@ const DramaCard = ({ drama, onOpen }) => {
 
 
 const MovieCard = ({ movie, onOpen }) => {
-  const computedRating = movie.rating || "N/A";
+  const db = getDB();
+  const computedRating = getRealRating(movie.id, db);
   return (
     <Card onClick={() => onOpen(movie)} style={{ width: 160, flexShrink: 0 }}>
       <div style={{ position: "relative" }}>
         <img src={movie.poster} alt={movie.title} style={{ width: "100%", height: 220, objectFit: "cover", display: "block" }} />
         <div style={{ position: "absolute", top: 6, right: 6, background: "rgba(0,0,0,0.75)", borderRadius: 4, padding: "2px 7px", fontSize: 13, fontWeight: 700, color: COLORS.starFilled }}>
-          ★ {computedRating}
+          {computedRating === null ? "Not rated" : "★ " + computedRating}
         </div>
         <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, background: "linear-gradient(transparent, rgba(0,0,0,0.9))", padding: "20px 8px 6px" }}>
           <span className="badge" style={{ background: COLORS.gold, color: "#111", fontSize: 10 }}>Movie</span>
@@ -610,7 +659,7 @@ const MoviePage = ({ movie, setPage }) => {
               <span className="badge" style={{ background: COLORS.bgPanel, color: COLORS.textSecondary, border: `1px solid ${COLORS.border}` }}>{movie.status}</span>
             </div>
             <p style={{ color: COLORS.textSecondary, lineHeight: 1.75, maxWidth: 720, marginBottom: 18 }}>{movie.synopsis}</p>
-            <div style={{ color: COLORS.starFilled, fontSize: 30, fontWeight: 700 }}>★ {movie.rating}</div>
+            <div style={{ color: COLORS.starFilled, fontSize: 30, fontWeight: 700 }}>{ratingLabel(movie.id, db)}</div>
           </div>
         </div>
       </div>
@@ -654,7 +703,7 @@ const MoviesPage = () => {
   let movies = [...(db.movies || [])]
     .filter(m => !search || m.title.toLowerCase().includes(search.toLowerCase()))
     .filter(m => !genre || m.genres.includes(genre));
-  if (sortBy === "rating") movies.sort((a,b) => b.rating - a.rating);
+  if (sortBy === "rating") movies.sort((a,b) => (getRealRating(b.id, db) || 0) - (getRealRating(a.id, db) || 0));
   if (sortBy === "year") movies.sort((a,b) => b.year - a.year);
   if (sortBy === "title") movies.sort((a,b) => a.title.localeCompare(b.title));
   return (
@@ -695,14 +744,25 @@ const DramaModal = ({ drama, onClose }) => {
   }, [drama.id, user]);
 
   const reviews = (db.reviews || []).filter(r => r.dramaId === drama.id);
-  const avgRating = reviews.length > 0 ? avg(reviews.map(r => r.rating)) : drama.rating;
+  const avgRating = getRealRating(drama.id, db);
 
   const handleRate = (val) => {
     if (!user) return alert("Please login to rate!");
     setRating(val);
     const db2 = getDB();
     const u = (db2.users || []).find(u => u.id === user.id);
-    if (u) { u.ratings = { ...u.ratings, [drama.id]: val }; patchDB(`users/${user.id}/ratings`, u.ratings); __dbCache = db2; updateUser(u); }
+    if (u) {
+      u.ratings = { ...u.ratings, [drama.id]: val };
+      db2.reviews = db2.reviews || [];
+      const existing = db2.reviews.findIndex(r => r.dramaId === drama.id && r.userId === user.id);
+      if (existing > -1) {
+        db2.reviews[existing] = { ...db2.reviews[existing], rating: val, username: user.username, date: new Date().toISOString().slice(0, 10) };
+      } else {
+        db2.reviews.push({ id: genId(), dramaId: drama.id, userId: user.id, username: user.username, rating: val, text: "", date: new Date().toISOString().slice(0, 10), likes: [] });
+      }
+      saveDB(db2);
+      updateUser(u);
+    }
   };
 
   const handleReview = () => {
@@ -711,8 +771,11 @@ const DramaModal = ({ drama, onClose }) => {
     if (!review.trim()) return alert("Please write a review.");
     const db2 = getDB();
     const existing = (db2.reviews || []).findIndex(r => r.dramaId === drama.id && r.userId === user.id);
-    const rev = { id: genId(), dramaId: drama.id, userId: user.id, username: user.username, rating, text: review.trim(), date: new Date().toISOString().slice(0, 10), likes: 0 };
-    if (!db2.reviews) db2.reviews = []; if (existing > -1) db2.reviews[existing] = rev; else db2.reviews.push(rev); patchDB(`reviews/${rev.id}`, rev); __dbCache = db2;
+    const existingId = existing > -1 ? db2.reviews[existing].id : genId();
+    const rev = { id: existingId, dramaId: drama.id, userId: user.id, username: user.username, rating, text: review.trim(), date: new Date().toISOString().slice(0, 10), likes: [] };
+    if (!db2.reviews) db2.reviews = [];
+    if (existing > -1) db2.reviews[existing] = rev; else db2.reviews.push(rev);
+    saveDB(db2);
     setReview("");
     alert("Review submitted!");
   };
@@ -762,8 +825,8 @@ const DramaModal = ({ drama, onClose }) => {
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
               <div style={{ textAlign: "center" }}>
-                <div style={{ fontSize: 28, fontWeight: 700, color: COLORS.starFilled }}>★ {avgRating}</div>
-                <div style={{ fontSize: 11, color: COLORS.textMuted }}>{fmtNum(drama.ratingCount + reviews.length)} ratings</div>
+                <div style={{ fontSize: 28, fontWeight: 700, color: COLORS.starFilled }}>{avgRating === null ? "Not rated" : "★ " + avgRating}</div>
+                <div style={{ fontSize: 11, color: COLORS.textMuted }}>{ratingCountLabel(drama.id, db)}</div>
               </div>
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: 12, color: COLORS.textSecondary, marginBottom: 4 }}>Your Rating:</div>
@@ -828,7 +891,7 @@ const DramaModal = ({ drama, onClose }) => {
                 <Btn size="sm" onClick={handleReview}>Submit Review</Btn>
               </div>
             )}
-            {reviews.length === 0 ? <div style={{ color: COLORS.textMuted, textAlign: "center", padding: 24 }}>No reviews yet. Be the first!</div> : reviews.map(r => (
+            {reviews.filter(r => r.text && r.text.trim()).length === 0 ? <div style={{ color: COLORS.textMuted, textAlign: "center", padding: 24 }}>No written reviews yet. Be the first!</div> : reviews.filter(r => r.text && r.text.trim()).map(r => (
               <div key={r.id} style={{ borderBottom: `1px solid ${COLORS.border}`, paddingBottom: 12, marginBottom: 12 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
                   <div style={{ width: 32, height: 32, borderRadius: "50%", background: COLORS.green1, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 14 }}>{r.username[0].toUpperCase()}</div>
@@ -892,7 +955,7 @@ const DramaPage = ({ drama, setPage }) => {
   }, [drama.id, user]);
 
   const reviews = (db.reviews || []).filter(r => r.dramaId === drama.id);
-  const avgRating = reviews.length > 0 ? avg(reviews.map(r => r.rating)) : drama.rating;
+  const avgRating = getRealRating(drama.id, db);
   const related = (db.dramas || []).filter(d => d.id !== drama.id && d.genres.some(g => drama.genres.includes(g))).slice(0, 6);
 
   const handleRate = (val) => {
@@ -900,7 +963,18 @@ const DramaPage = ({ drama, setPage }) => {
     setRating(val);
     const db2 = getDB();
     const u = (db2.users || []).find(u => u.id === user.id);
-    if (u) { u.ratings = { ...u.ratings, [drama.id]: val }; patchDB(`users/${user.id}/ratings`, u.ratings); __dbCache = db2; updateUser(u); }
+    if (u) {
+      u.ratings = { ...u.ratings, [drama.id]: val };
+      db2.reviews = db2.reviews || [];
+      const existing = db2.reviews.findIndex(r => r.dramaId === drama.id && r.userId === user.id);
+      if (existing > -1) {
+        db2.reviews[existing] = { ...db2.reviews[existing], rating: val, username: user.username, date: new Date().toISOString().slice(0, 10) };
+      } else {
+        db2.reviews.push({ id: genId(), dramaId: drama.id, userId: user.id, username: user.username, rating: val, text: "", date: new Date().toISOString().slice(0, 10), likes: [] });
+      }
+      saveDB(db2);
+      updateUser(u);
+    }
   };
 
   const handleReview = () => {
@@ -909,8 +983,11 @@ const DramaPage = ({ drama, setPage }) => {
     if (!review.trim()) return alert("Please write a review.");
     const db2 = getDB();
     const existing = (db2.reviews || []).findIndex(r => r.dramaId === drama.id && r.userId === user.id);
-    const rev = { id: genId(), dramaId: drama.id, userId: user.id, username: user.username, rating, text: review.trim(), date: new Date().toISOString().slice(0, 10), likes: 0 };
-    if (!db2.reviews) db2.reviews = []; if (existing > -1) db2.reviews[existing] = rev; else db2.reviews.push(rev); patchDB(`reviews/${rev.id}`, rev); __dbCache = db2;
+    const existingId = existing > -1 ? db2.reviews[existing].id : genId();
+    const rev = { id: existingId, dramaId: drama.id, userId: user.id, username: user.username, rating, text: review.trim(), date: new Date().toISOString().slice(0, 10), likes: [] };
+    if (!db2.reviews) db2.reviews = [];
+    if (existing > -1) db2.reviews[existing] = rev; else db2.reviews.push(rev);
+    saveDB(db2);
     setReview("");
     alert("Review submitted!");
   };
@@ -956,7 +1033,7 @@ const DramaPage = ({ drama, setPage }) => {
             </div>
             <p style={{ color: COLORS.textSecondary, lineHeight: 1.75, maxWidth: 720, marginBottom: 18 }}>{drama.synopsis}</p>
             <div style={{ display: "flex", gap: 22, flexWrap: "wrap", alignItems: "center" }}>
-              <div><div style={{ color: COLORS.starFilled, fontSize: 30, fontWeight: 700 }}>★ {avgRating}</div><div style={{ fontSize: 12, color: COLORS.textMuted }}>{fmtNum(drama.ratingCount + reviews.length)} ratings</div></div>
+              <div><div style={{ color: COLORS.starFilled, fontSize: 30, fontWeight: 700 }}>{avgRating === null ? "Not rated" : "★ " + avgRating}</div><div style={{ fontSize: 12, color: COLORS.textMuted }}>{ratingCountLabel(drama.id, db)}</div></div>
               <div><div style={{ fontSize: 12, color: COLORS.textSecondary, marginBottom: 4 }}>Your Rating</div><StarRow value={rating} onChange={handleRate} size={21} /></div>
               <select value={watchStatus} onChange={e => handleWatchStatus(e.target.value)} style={{ background: COLORS.bgInput, border: `1px solid ${COLORS.border}`, borderRadius: 7, color: COLORS.textPrimary, padding: "9px 12px", fontSize: 13 }}>
                 {WATCH_STATUSES.map(s => <option key={s.key} value={s.key}>{s.icon} {s.label}</option>)}
@@ -990,7 +1067,7 @@ const DramaPage = ({ drama, setPage }) => {
           <Card style={{ padding: 20, marginBottom: 20 }}>
             <h2 style={{ fontFamily: "Cinzel", fontSize: 20, color: COLORS.green3, marginBottom: 12 }}>Reviews</h2>
             {user && <div style={{ background: COLORS.bgInput, borderRadius: 8, padding: 14, marginBottom: 16, border: `1px solid ${COLORS.border}` }}><textarea value={review} onChange={e => setReview(e.target.value)} placeholder="Share your thoughts about this drama..." rows={3} style={{ width: "100%", background: COLORS.bgPanel, border: `1px solid ${COLORS.border}`, borderRadius: 6, color: COLORS.textPrimary, padding: "8px 12px", fontSize: 13, resize: "vertical", marginBottom: 8 }} /><Btn size="sm" onClick={handleReview}>Submit Review</Btn></div>}
-            {reviews.length === 0 ? <div style={{ color: COLORS.textMuted, textAlign: "center", padding: 20 }}>No reviews yet. Be the first!</div> : reviews.map(r => <div key={r.id} style={{ borderBottom: `1px solid ${COLORS.border}`, paddingBottom: 12, marginBottom: 12 }}><div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}><div style={{ width: 32, height: 32, borderRadius: "50%", background: COLORS.green1, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 14 }}>{r.username[0].toUpperCase()}</div><div><div style={{ fontSize: 13, fontWeight: 600 }}>{r.username}</div><div style={{ fontSize: 11, color: COLORS.textMuted }}>{r.date}</div></div><div style={{ marginLeft: "auto", color: COLORS.starFilled, fontSize: 13 }}>★ {r.rating}/10</div></div><p style={{ fontSize: 13, color: COLORS.textSecondary, lineHeight: 1.6 }}>{r.text}</p></div>)}
+            {reviews.filter(r => r.text && r.text.trim()).length === 0 ? <div style={{ color: COLORS.textMuted, textAlign: "center", padding: 20 }}>No written reviews yet. Be the first!</div> : reviews.filter(r => r.text && r.text.trim()).map(r => <div key={r.id} style={{ borderBottom: `1px solid ${COLORS.border}`, paddingBottom: 12, marginBottom: 12 }}><div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}><div style={{ width: 32, height: 32, borderRadius: "50%", background: COLORS.green1, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 14 }}>{r.username[0].toUpperCase()}</div><div><div style={{ fontSize: 13, fontWeight: 600 }}>{r.username}</div><div style={{ fontSize: 11, color: COLORS.textMuted }}>{r.date}</div></div><div style={{ marginLeft: "auto", color: COLORS.starFilled, fontSize: 13 }}>★ {r.rating}/10</div></div><p style={{ fontSize: 13, color: COLORS.textSecondary, lineHeight: 1.6 }}>{r.text}</p></div>)}
           </Card>
 
           <Card style={{ padding: 20 }}>
@@ -1006,7 +1083,7 @@ const DramaPage = ({ drama, setPage }) => {
           </Card>
           <Card style={{ padding: 18 }}>
             <h3 style={{ fontFamily: "Cinzel", fontSize: 16, color: COLORS.green3, marginBottom: 12 }}>Related Dramas</h3>
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>{related.map(d => <div key={d.id} onClick={() => openDramaPage(d)} style={{ display: "flex", gap: 10, cursor: "pointer", paddingBottom: 10, borderBottom: `1px solid ${COLORS.border}` }}><img src={d.poster} alt={d.title} style={{ width: 45, height: 64, objectFit: "cover", borderRadius: 4 }} /><div><div style={{ fontSize: 13, fontWeight: 700, color: COLORS.textPrimary }}>{d.title}</div><div style={{ fontSize: 11, color: COLORS.textMuted }}>{d.year} · ★ {d.rating}</div></div></div>)}</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>{related.map(d => <div key={d.id} onClick={() => openDramaPage(d)} style={{ display: "flex", gap: 10, cursor: "pointer", paddingBottom: 10, borderBottom: `1px solid ${COLORS.border}` }}><img src={d.poster} alt={d.title} style={{ width: 45, height: 64, objectFit: "cover", borderRadius: 4 }} /><div><div style={{ fontSize: 13, fontWeight: 700, color: COLORS.textPrimary }}>{d.title}</div><div style={{ fontSize: 11, color: COLORS.textMuted }}>{d.year} · {ratingLabel(d.id)}</div></div></div>)}</div>
           </Card>
         </aside>
       </div>
@@ -1522,9 +1599,9 @@ const HomePage = ({ setPage }) => {
   const [selectedDrama, setSelectedDrama] = useState(null);
   if (!db || !db.dramas) return <div style={{ color: "#c5e8cf", padding: 60, textAlign: "center", fontSize: 18 }}>Loading dramas...</div>;
   const featured = (db.dramas || []).slice(0, 1)[0];
-  const trending = [...db.dramas].sort((a, b) => b.views - a.views).slice(0, 8);
-  const topRated = [...db.dramas].sort((a, b) => b.rating - a.rating).slice(0, 8);
-  const recent = [...db.dramas].sort((a, b) => b.createdAt - a.createdAt).slice(0, 8);
+  const trending = [...(db.dramas || [])].sort((a, b) => (b.views || 0) - (a.views || 0)).slice(0, 8);
+  const topRated = [...(db.dramas || [])].sort((a, b) => (getRealRating(b.id, db) || 0) - (getRealRating(a.id, db) || 0)).slice(0, 8);
+  const recent = [...(db.dramas || [])].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)).slice(0, 8);
 
   return (
     <div className="fade-in">
@@ -1653,7 +1730,7 @@ const DramasPage = () => {
     .filter(d => !status || d.status === status)
     .filter(d => !year || d.year === parseInt(year));
 
-  if (sortBy === "rating") filtered.sort((a, b) => b.rating - a.rating);
+  if (sortBy === "rating") filtered.sort((a, b) => (getRealRating(b.id, db) || 0) - (getRealRating(a.id, db) || 0));
   else if (sortBy === "year") filtered.sort((a, b) => b.year - a.year);
   else if (sortBy === "views") filtered.sort((a, b) => b.views - a.views);
   else if (sortBy === "title") filtered.sort((a, b) => a.title.localeCompare(b.title));
@@ -1720,7 +1797,7 @@ const DramasPage = () => {
 const TopRatedPage = () => {
   const db = getDB();
   const [selectedDrama, setSelectedDrama] = useState(null);
-  const sorted = [...db.dramas].sort((a, b) => b.rating - a.rating);
+  const sorted = [...(db.dramas || [])].sort((a, b) => (getRealRating(b.id, db) || 0) - (getRealRating(a.id, db) || 0));
 
   return (
     <div className="fade-in" style={{ maxWidth: 1000, margin: "0 auto", padding: "28px 20px" }}>
@@ -2115,7 +2192,7 @@ const AdminDashboard = ({ db }) => {
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
         <Card style={{ padding: 20 }}>
           <h3 style={{ fontSize: 15, color: COLORS.green4, marginBottom: 14 }}>Recent Dramas</h3>
-          {[...db.dramas].sort((a, b) => b.createdAt - a.createdAt).slice(0, 5).map(d => (
+          {[...(db.dramas || [])].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)).slice(0, 5).map(d => (
             <div key={d.id} style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 10 }}>
               <img src={d.poster} alt={d.title} style={{ width: 36, height: 50, objectFit: "cover", borderRadius: 3 }} />
               <div style={{ flex: 1 }}>
@@ -2149,12 +2226,7 @@ const AdminDramas = ({ db, refresh }) => {
   const [search, setSearch] = useState("");
   const filtered = (db.dramas || []).filter(d => !search || d.title.toLowerCase().includes(search.toLowerCase()));
 
-  const deleteDrama = (id) => {
-    if (!window.confirm("Delete this drama?")) return;
-    const db2 = getDB();
-    db2.dramas = db2.dramas.filter(d => d.id !== id);
-    saveDB(db2); refresh();
-  };
+  const deleteDrama = (id) => { if (window.confirm("Delete this drama permanently?")) deleteDramaEverywhere(id); };
 
   return (
     <div>
@@ -2616,6 +2688,11 @@ const AdminSettings = ({ db, refresh }) => {
             <input type="checkbox" checked={form.maintenanceMode} onChange={e => setForm({ ...form, maintenanceMode: e.target.checked })} />
             Maintenance Mode
           </label>
+        </div>
+
+        <Input label="Featured Drama (optional)" value={form.featuredDramaId || ""} onChange={v => setForm({ ...form, featuredDramaId: v })} options={["", ...(getDB().dramas || []).map(d => d.id)]} />
+        <div style={{ fontSize: 12, color: COLORS.textMuted, marginTop: -10, marginBottom: 14 }}>
+          Leave empty to hide the big featured hero on the homepage.
         </div>
         <Btn onClick={save}>💾 Save Settings</Btn>
       </Card>
