@@ -10,6 +10,7 @@
   <!-- Firebase compat CDN (works without ES modules) -->
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
   <script>
     const firebaseConfig = {
       apiKey: "AIzaSyB3auFGDHgnE9b2_Xjuvqv6pKVarsIiodE",
@@ -23,6 +24,7 @@
     };
     firebase.initializeApp(firebaseConfig);
     window.__fbdb = firebase.database();
+    window.__fbauth = firebase.auth();
   </script>
 </head>
 <body>
@@ -272,6 +274,9 @@ const migrateDB = (db) => {
   if (!db.comments) db.comments = [];
   if (!db.news) db.news = [];
   if (!db.settings) db.settings = { siteName: "PakDramaList", tagline: "پاکستانی ڈراموں کی دنیا", maintenanceMode: false };
+  // Remove old hardcoded demo accounts if they still exist in Firebase
+  const OLD_DEMO_EMAILS = ["admin@pkdramalist.com", "user@test.com"];
+  db.users = db.users.filter(u => !OLD_DEMO_EMAILS.includes(u.email));
   db.people = db.people.map(p => ({ knownFor: [], ...p, roles: p.roles || [p.primaryRole || "Actor"] }));
   db.dramas = (db.dramas || []).map(d => {
     const castNames = Array.isArray(d.cast) ? d.cast : String(d.cast || "").split(",").map(x => x.trim()).filter(Boolean);
@@ -329,10 +334,7 @@ const sampleDramas = [
 
 const initDB = () => {
   const db = {
-    users: [
-      { id: "u0", username: "admin", email: "admin@pkdramalist.com", password: "admin123", role: "admin", avatar: "A", bio: "Site administrator", joinDate: "2024-01-01", watchlist: [], ratings: {}, reviews: {}, lists: [], following: [], followers: [] },
-      { id: "u1", username: "dramatics", email: "user@test.com", password: "user123", role: "member", avatar: "D", bio: "Pakistani drama enthusiast!", joinDate: "2024-03-15", watchlist: [], ratings: {}, reviews: {}, lists: [], following: [], followers: [] },
-    ],
+    users: [],
     dramas: sampleDramas,
     movies: sampleMovies,
     people: samplePeople,
@@ -1192,27 +1194,95 @@ const CommentsSection = ({ dramaId }) => {
 };
 
 // ─── AUTH MODAL ───────────────────────────────────────────────────────────────
+// ─── FIREBASE AUTH HELPERS ────────────────────────────────────────────────────
+// After Firebase Auth signs in, load or create the user profile in the database
+const loadOrCreateProfile = async (firebaseUser, extraData = {}) => {
+  const db = getDB();
+  const uid = firebaseUser.uid;
+  // Check if profile already exists
+  let profile = (db.users || []).find(u => u.id === uid);
+  if (!profile) {
+    // First ever user becomes admin
+    const isFirstUser = (db.users || []).length === 0;
+    profile = {
+      id: uid,
+      username: extraData.username || firebaseUser.displayName || firebaseUser.email.split("@")[0],
+      email: firebaseUser.email,
+      role: isFirstUser ? "admin" : "member",
+      avatar: (extraData.username || firebaseUser.displayName || firebaseUser.email)[0].toUpperCase(),
+      bio: "",
+      joinDate: new Date().toISOString().slice(0, 10),
+      watchlist: [],
+      ratings: {},
+      lists: [],
+      following: [],
+      followers: [],
+    };
+    if (!db.users) db.users = [];
+    db.users.push(profile);
+    saveDB(db);
+  }
+  return profile;
+};
+
 const AuthModal = ({ onClose, onSuccess }) => {
   const [mode, setMode] = useState("login");
   const [form, setForm] = useState({ username: "", email: "", password: "", confirm: "" });
   const [err, setErr] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const handle = () => {
-    setErr("");
-    const db = getDB();
-    if (mode === "login") {
-      const u = (db.users || []).find(u => (u.email === form.email || u.username === form.email) && u.password === form.password);
-      if (!u) return setErr("Invalid credentials.");
-      onSuccess(u);
-    } else {
-      if (!form.username || !form.email || !form.password) return setErr("All fields required.");
-      if (form.password !== form.confirm) return setErr("Passwords don't match.");
-      if ((db.users || []).find(u => u.email === form.email)) return setErr("Email already registered.");
-      if ((db.users || []).find(u => u.username === form.username)) return setErr("Username taken.");
-      const newUser = { id: genId(), username: form.username, email: form.email, password: form.password, role: "member", avatar: form.username[0].toUpperCase(), bio: "", joinDate: new Date().toISOString().slice(0, 10), watchlist: [], ratings: {}, reviews: {}, lists: [], following: [], followers: [] };
-      (db.users || []).push(newUser);
-      saveDB(db);
-      onSuccess(newUser);
+  const handleEmailAuth = async () => {
+    setErr(""); setLoading(true);
+    const auth = window.__fbauth;
+    try {
+      if (mode === "login") {
+        const cred = await auth.signInWithEmailAndPassword(form.email, form.password);
+        const profile = await loadOrCreateProfile(cred.user);
+        onSuccess(profile);
+      } else {
+        if (!form.username.trim()) { setErr("Username is required."); setLoading(false); return; }
+        if (form.password !== form.confirm) { setErr("Passwords don't match."); setLoading(false); return; }
+        const db = getDB();
+        if ((db.users || []).find(u => u.username === form.username)) { setErr("Username already taken."); setLoading(false); return; }
+        const cred = await auth.createUserWithEmailAndPassword(form.email, form.password);
+        const profile = await loadOrCreateProfile(cred.user, { username: form.username });
+        onSuccess(profile);
+      }
+    } catch (e) {
+      const msgs = {
+        "auth/email-already-in-use": "This email is already registered.",
+        "auth/invalid-email": "Invalid email address.",
+        "auth/weak-password": "Password must be at least 6 characters.",
+        "auth/user-not-found": "No account found with this email.",
+        "auth/wrong-password": "Incorrect password.",
+        "auth/invalid-credential": "Incorrect email or password.",
+        "auth/too-many-requests": "Too many attempts. Try again later.",
+      };
+      setErr(msgs[e.code] || e.message);
+    }
+    setLoading(false);
+  };
+
+  const handleGoogle = async () => {
+    setErr(""); setLoading(true);
+    try {
+      const provider = new firebase.auth.GoogleAuthProvider();
+      const cred = await window.__fbauth.signInWithPopup(provider);
+      const profile = await loadOrCreateProfile(cred.user);
+      onSuccess(profile);
+    } catch (e) {
+      if (e.code !== "auth/popup-closed-by-user") setErr(e.message);
+    }
+    setLoading(false);
+  };
+
+  const handleForgotPassword = async () => {
+    if (!form.email) { setErr("Enter your email first."); return; }
+    try {
+      await window.__fbauth.sendPasswordResetEmail(form.email);
+      setErr(""); alert("Password reset email sent! Check your inbox.");
+    } catch (e) {
+      setErr("Could not send reset email. Check the address.");
     }
   };
 
@@ -1223,19 +1293,40 @@ const AuthModal = ({ onClose, onSuccess }) => {
           <h2 style={{ fontFamily: "Cinzel", color: COLORS.green3, fontSize: 22 }}>{mode === "login" ? "Sign In" : "Create Account"}</h2>
           <button onClick={onClose} style={{ background: "none", border: "none", color: COLORS.textMuted, fontSize: 20, cursor: "pointer" }}>✕</button>
         </div>
+
+        {/* Google Sign In */}
+        <button onClick={handleGoogle} disabled={loading} style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 10, padding: "10px 16px", marginBottom: 16, background: "#fff", color: "#333", border: "1px solid #ddd", borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
+          <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+          Continue with Google
+        </button>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
+          <div style={{ flex: 1, height: 1, background: COLORS.border }} />
+          <span style={{ color: COLORS.textMuted, fontSize: 12 }}>or</span>
+          <div style={{ flex: 1, height: 1, background: COLORS.border }} />
+        </div>
+
         {mode === "register" && <Input label="Username" value={form.username} onChange={v => setForm({ ...form, username: v })} />}
-        <Input label={mode === "login" ? "Email or Username" : "Email"} value={form.email} onChange={v => setForm({ ...form, email: v })} />
+        <Input label="Email" value={form.email} onChange={v => setForm({ ...form, email: v })} />
         <Input label="Password" type="password" value={form.password} onChange={v => setForm({ ...form, password: v })} />
         {mode === "register" && <Input label="Confirm Password" type="password" value={form.confirm} onChange={v => setForm({ ...form, confirm: v })} />}
-        {err && <div style={{ color: COLORS.danger, fontSize: 13, marginBottom: 12 }}>{err}</div>}
-        <Btn onClick={handle} style={{ width: "100%", marginBottom: 14 }}>{mode === "login" ? "Sign In" : "Register"}</Btn>
+
+        {err && <div style={{ color: "#f88", fontSize: 13, marginBottom: 12 }}>{err}</div>}
+
+        <Btn onClick={handleEmailAuth} disabled={loading} style={{ width: "100%", marginBottom: 10, opacity: loading ? 0.7 : 1 }}>
+          {loading ? "Please wait…" : mode === "login" ? "Sign In" : "Create Account"}
+        </Btn>
+
+        {mode === "login" && (
+          <div style={{ textAlign: "right", marginBottom: 12 }}>
+            <span onClick={handleForgotPassword} style={{ color: COLORS.green3, fontSize: 12, cursor: "pointer" }}>Forgot password?</span>
+          </div>
+        )}
+
         <div style={{ textAlign: "center", fontSize: 13, color: COLORS.textMuted }}>
-          {mode === "login" ? <>Don't have an account? <span onClick={() => setMode("register")} style={{ color: COLORS.green3, cursor: "pointer" }}>Register</span></> : <>Already have an account? <span onClick={() => setMode("login")} style={{ color: COLORS.green3, cursor: "pointer" }}>Sign In</span></>}
-        </div>
-        <div style={{ marginTop: 16, padding: 12, background: COLORS.bgInput, borderRadius: 6, fontSize: 12, color: COLORS.textMuted }}>
-          <strong style={{ color: COLORS.green4 }}>Demo accounts:</strong><br />
-          Admin: admin@pkdramalist.com / admin123<br />
-          User: user@test.com / user123
+          {mode === "login"
+            ? <>Don't have an account? <span onClick={() => { setMode("register"); setErr(""); }} style={{ color: COLORS.green3, cursor: "pointer" }}>Register</span></>
+            : <>Already have an account? <span onClick={() => { setMode("login"); setErr(""); }} style={{ color: COLORS.green3, cursor: "pointer" }}>Sign In</span></>}
         </div>
       </div>
     </div>
@@ -2518,42 +2609,43 @@ function App() {
     syncRoute();
     window.addEventListener("hashchange", syncRoute);
 
-    // Show site immediately with sample data, then sync from Firebase
-    if (!__dbCache) {
-      __dbCache = initDB();
-    }
-    setDbReady(true);
+    // Load DB first with sample data, then sync from Firebase
+    if (!__dbCache) __dbCache = initDB();
 
-    // Then connect Firebase in background
+    // Then connect Firebase Realtime Database in background
     if (window.__fbdb) {
       window.__fbdb.ref("/").on("value", (snapshot) => {
         const data = snapshot.val();
         if (!data) {
-          // First run — seed Firebase with sample data
           window.__fbdb.ref("/").set(__dbCache).catch(e => console.error("Seed error:", e));
         } else {
           __dbCache = migrateDB(data);
-          // Re-check session after data loads
-          const savedId = localStorage.getItem("pakdramalist_session");
-          if (savedId) {
-            const u = (__dbCache.users || []).find(u => u.id === savedId);
-            if (u) setUser(u);
-          }
-          setDbReady(prev => { if (!prev) return true; return prev; });
         }
+        setDbReady(true);
       }, (error) => {
         console.error("Firebase error:", error);
-        setDbError("Firebase connection failed. Check your database Rules are set to public.");
+        setDbError("Firebase connection failed. Check your database Rules.");
+        setDbReady(true);
       });
     } else {
       setDbError("Firebase not loaded — running with sample data only.");
+      setDbReady(true);
     }
 
-    // Restore session from localStorage
-    const savedId = localStorage.getItem("pakdramalist_session");
-    if (savedId && __dbCache) {
-      const u = (__dbCache.users || []).find(u => u.id === savedId);
-      if (u) setUser(u);
+    // Firebase Auth — auto-restore session on page load
+    if (window.__fbauth) {
+      window.__fbauth.onAuthStateChanged(async (firebaseUser) => {
+        if (firebaseUser) {
+          // Wait a tick for DB to be ready
+          setTimeout(() => {
+            const db = getDB();
+            const profile = (db.users || []).find(u => u.id === firebaseUser.uid);
+            if (profile) setUser(profile);
+          }, 1000);
+        } else {
+          setUser(null);
+        }
+      });
     }
 
     return () => window.removeEventListener("hashchange", syncRoute);
@@ -2561,13 +2653,12 @@ function App() {
 
   const login = (u) => {
     setUser(u);
-    localStorage.setItem("pakdramalist_session", u.id);
     setAuthMode(null);
   };
 
   const logout = () => {
+    if (window.__fbauth) window.__fbauth.signOut();
     setUser(null);
-    localStorage.removeItem("pakdramalist_session");
     window.location.hash = "";
     setPage("home");
   };
